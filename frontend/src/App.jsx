@@ -1134,7 +1134,7 @@ export default function App() {
           <div className="relative flex w-4/5 max-w-xs flex-col bg-white h-full shadow-2xl p-6 text-left animate-fade-in z-50">
             {/* Header with Title and Close X */}
             <div className="flex items-center justify-between pb-6 border-b border-slate-100">
-              <span className="text-lg font-black text-slate-900 tracking-wider">AZUREA</span>
+              <span className="text-lg font-extrabold bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-wider">DOM</span>
               <button 
                 onClick={() => setShowMobileMenu(false)}
                 className="p-1.5 rounded-full hover:bg-slate-100 transition cursor-pointer"
@@ -1237,8 +1237,8 @@ export default function App() {
           <div className="hidden md:flex items-center justify-between w-full">
             {/* Logo */}
             <div className="flex items-center gap-8">
-              <button onClick={() => { setCurrentTab('home'); setSelectedProduct(null); }} className="text-2xl font-extrabold text-blue-700 tracking-tight cursor-pointer">
-                AZUREA
+              <button onClick={() => { setCurrentTab('home'); setSelectedProduct(null); }} className="text-2xl font-black bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-tight cursor-pointer">
+                DOM
               </button>
               <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
                 <button onClick={() => { setCurrentTab('home'); setSelectedProduct(null); }} className={`cursor-pointer hover:text-blue-600 ${currentTab === 'home' ? 'text-blue-600 font-semibold' : ''}`}>{t('home')}</button>
@@ -1321,9 +1321,9 @@ export default function App() {
             <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
               <button 
                 onClick={() => { setCurrentTab('home'); setSelectedProduct(null); }} 
-                className="text-lg font-black text-slate-900 tracking-widest font-serif cursor-pointer uppercase"
+                className="text-lg font-black bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-widest cursor-pointer"
               >
-                AZUREA
+                DOM
               </button>
             </div>
 
@@ -3134,7 +3134,7 @@ export default function App() {
       <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 mt-20 pt-16 pb-8 text-left">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-12 pb-12 border-b border-slate-800">
           <div className="space-y-4">
-            <strong className="text-white text-xl tracking-wider">AZUREA</strong>
+            <strong className="text-xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent tracking-wider">DOM</strong>
             <p className="text-xs font-light text-slate-400 leading-relaxed">
               Premium curated capsule collections with perfect sizing structures and exceptional quality.
             </p>
