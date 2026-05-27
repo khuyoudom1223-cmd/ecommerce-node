@@ -927,10 +927,12 @@ export default function App() {
       discountPrice: newProdDiscountPrice ? parseFloat(newProdDiscountPrice) : null,
       stock: stockVal,
       description: newProdDescription.trim() || `${newProdName} premium ${newProdCategory.toLowerCase()} collection.`,
-      brand: "Azurea Capsule",
+      brand: "DOM Studio",
       image: finalImage,
       rating: 5.0,
-      reviews: 1
+      sizes: ["S", "M", "L", "XL"],
+      colors: ["Blue", "White", "Black"],
+      reviews: []
     };
 
     setProducts([newProductItem, ...products]);
@@ -1891,7 +1893,7 @@ export default function App() {
                       <Star className="h-4 w-4 fill-amber-500 text-slate-200" />
                       <span className="ml-1 text-sm font-bold text-slate-800">{selectedProduct.rating}</span>
                     </div>
-                    <span className="text-xs text-slate-400">({selectedProduct.reviews.length} Verified Customer Reviews)</span>
+                    <span className="text-xs text-slate-400">({(selectedProduct.reviews || []).length} Verified Customer Reviews)</span>
                   </div>
 
                   {/* Pricing */}
@@ -1923,7 +1925,7 @@ export default function App() {
                       <span className="text-blue-600 hover:underline cursor-pointer normal-case">Size Chart Guide</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {selectedProduct.sizes.map(size => (
+                      {(selectedProduct.sizes || []).map(size => (
                         <button
                           key={size}
                           onClick={() => setSelectedSize(size)}
@@ -1943,7 +1945,7 @@ export default function App() {
                   <div className="space-y-2 pt-2">
                     <span className="block text-xs font-semibold uppercase text-slate-500 tracking-wider">Select Color:</span>
                     <div className="flex gap-2">
-                      {selectedProduct.colors.map(color => (
+                      {(selectedProduct.colors || []).map(color => (
                         <button
                           key={color}
                           onClick={() => setSelectedColor(color)}
