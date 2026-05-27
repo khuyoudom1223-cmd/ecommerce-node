@@ -565,6 +565,8 @@ export default function App() {
   const [newProdImage, setNewProdImage] = useState('');
   const [newProdImageFile, setNewProdImageFile] = useState(null);
   const [newProdImagePreview, setNewProdImagePreview] = useState('');
+  const [newProdSizes, setNewProdSizes] = useState(['S', 'M', 'L', 'XL']);
+  const [newProdColorsInput, setNewProdColorsInput] = useState('Blue, White, Black');
 
   // Admin sub-panel states
   const [adminTab, setAdminTab] = useState('dashboard');
@@ -918,6 +920,11 @@ export default function App() {
       finalImage = newProdImage.trim() || defaultImages[newProdCategory] || "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600";
     }
 
+    const parsedColors = newProdColorsInput
+      .split(',')
+      .map(c => c.trim())
+      .filter(Boolean);
+
     const newProductItem = {
       id: products.length + 1,
       name: newProdName,
@@ -930,8 +937,8 @@ export default function App() {
       brand: "DOM Studio",
       image: finalImage,
       rating: 5.0,
-      sizes: ["S", "M", "L", "XL"],
-      colors: ["Blue", "White", "Black"],
+      sizes: newProdSizes.length > 0 ? newProdSizes : ["S", "M", "L", "XL"],
+      colors: parsedColors.length > 0 ? parsedColors : ["Blue", "White", "Black"],
       reviews: []
     };
 
@@ -948,6 +955,8 @@ export default function App() {
     setNewProdImage('');
     setNewProdImageFile(null);
     setNewProdImagePreview('');
+    setNewProdSizes(['S', 'M', 'L', 'XL']);
+    setNewProdColorsInput('Blue, White, Black');
     setShowAddProductForm(false);
   };
 
@@ -2617,6 +2626,48 @@ export default function App() {
                           placeholder="e.g. 99.99"
                           value={newProdDiscountPrice}
                           onChange={(e) => setNewProdDiscountPrice(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-250 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      {/* Available Sizes */}
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-500 uppercase">Available Sizes:</label>
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(sz => {
+                            const isSelected = newProdSizes.includes(sz);
+                            return (
+                              <button
+                                type="button"
+                                key={sz}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setNewProdSizes(prev => prev.filter(x => x !== sz));
+                                  } else {
+                                    setNewProdSizes(prev => [...prev, sz]);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border transition cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-350'
+                                }`}
+                              >
+                                {sz}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Available Colors */}
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-500 uppercase">Available Colors:</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Blue, White, Black"
+                          value={newProdColorsInput}
+                          onChange={(e) => setNewProdColorsInput(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-250 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs font-semibold text-slate-800"
                         />
                       </div>
