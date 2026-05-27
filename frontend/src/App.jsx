@@ -519,6 +519,8 @@ export default function App() {
   const [newProdStock, setNewProdStock] = useState('');
   const [newProdDescription, setNewProdDescription] = useState('');
   const [newProdImage, setNewProdImage] = useState('');
+  const [newProdImageFile, setNewProdImageFile] = useState(null);
+  const [newProdImagePreview, setNewProdImagePreview] = useState('');
 
   // Admin sub-panel states
   const [adminTab, setAdminTab] = useState('dashboard');
@@ -805,7 +807,7 @@ export default function App() {
   };
 
   // Vendor Action: Add New Product
-  const handleAddProduct = (e) => {
+  const handleAddProduct = async (e) => {
     e.preventDefault();
     if (!newProdName.trim() || !newProdSku.trim() || !newProdPrice || !newProdStock) {
       triggerNotification("Please fill in all required fields!", "error");
@@ -822,17 +824,55 @@ export default function App() {
       return;
     }
 
-    // Default image mappings
-    const defaultImages = {
-      Coats: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600",
-      Dresses: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?q=80&w=600",
-      Shirts: "https://images.unsplash.com/photo-1603252109303-2751441dd157?q=80&w=600",
-      Jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=600",
-      Skirts: "https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?q=80&w=600",
-      Sweaters: "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=600"
-    };
+    let finalImage = '';
 
-    const finalImage = newProdImage.trim() || defaultImages[newProdCategory] || "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600";
+    if (newProdImageFile) {
+      triggerNotification("Uploading product image...", "info");
+      
+      const formData = new FormData();
+      formData.append('image', newProdImageFile);
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to upload image. Server error.');
+        }
+        
+        const data = await response.json();
+        if (data.success && data.url) {
+          finalImage = data.url;
+        } else {
+          throw new Error(data.message || 'Image upload response was not successful.');
+        }
+      } catch (err) {
+        console.error(err);
+        triggerNotification(`Image upload failed: ${err.message}. Using default placeholder.`, "warning");
+        
+        const defaultImages = {
+          Coats: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600",
+          Dresses: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?q=80&w=600",
+          Shirts: "https://images.unsplash.com/photo-1603252109303-2751441dd157?q=80&w=600",
+          Jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=600",
+          Skirts: "https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?q=80&w=600",
+          Sweaters: "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=600"
+        };
+        finalImage = defaultImages[newProdCategory] || "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600";
+      }
+    } else {
+      const defaultImages = {
+        Coats: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600",
+        Dresses: "https://images.unsplash.com/photo-1595777457583-95e059d581b8?q=80&w=600",
+        Shirts: "https://images.unsplash.com/photo-1603252109303-2751441dd157?q=80&w=600",
+        Jackets: "https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=600",
+        Skirts: "https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?q=80&w=600",
+        Sweaters: "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?q=80&w=600"
+      };
+      finalImage = newProdImage.trim() || defaultImages[newProdCategory] || "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600";
+    }
 
     const newProductItem = {
       id: products.length + 1,
@@ -860,6 +900,8 @@ export default function App() {
     setNewProdStock('');
     setNewProdDescription('');
     setNewProdImage('');
+    setNewProdImageFile(null);
+    setNewProdImagePreview('');
     setShowAddProductForm(false);
   };
 
@@ -2462,16 +2504,93 @@ export default function App() {
                         />
                       </div>
 
-                      {/* Image URL */}
-                      <div className="md:col-span-2 space-y-1">
-                        <label className="block text-[11px] font-bold text-slate-500 uppercase">Product Image URL (Optional):</label>
-                        <input
-                          type="url"
-                          placeholder="Leave blank to use a high-quality category default placeholder"
-                          value={newProdImage}
-                          onChange={(e) => setNewProdImage(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-250 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs font-semibold text-slate-800"
-                        />
+                      {/* Product Image Option (Upload or URL) */}
+                      <div className="md:col-span-2 space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">Product Image:</label>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* File Upload Section */}
+                          <div className="space-y-2">
+                            <span className="block text-[10px] font-semibold text-slate-400 uppercase">Option 1: Upload from Device</span>
+                            <div className="flex items-center justify-center w-full">
+                              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-white hover:bg-slate-50 hover:border-blue-400 transition-colors">
+                                <div className="flex flex-col items-center justify-center pt-4 pb-4 px-2 text-center">
+                                  <PlusCircle className="h-6 w-6 text-slate-400 mb-1" />
+                                  <p className="text-[11px] text-slate-500 font-medium">Click to upload image</p>
+                                  <p className="text-[9px] text-slate-400 mt-0.5">PNG, JPG, WEBP (Max 5MB)</p>
+                                </div>
+                                <input 
+                                  type="file" 
+                                  accept="image/png, image/jpeg, image/webp" 
+                                  className="hidden" 
+                                  onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) {
+                                      if (file.size > 5 * 1024 * 1024) {
+                                        triggerNotification("File is too large! Maximum allowed is 5MB.", "error");
+                                        return;
+                                      }
+                                      setNewProdImageFile(file);
+                                      setNewProdImagePreview(URL.createObjectURL(file));
+                                      setNewProdImage('');
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Image URL Section */}
+                          <div className="space-y-2">
+                            <span className="block text-[10px] font-semibold text-slate-400 uppercase">Option 2: Paste Image URL</span>
+                            <textarea
+                              rows="3"
+                              placeholder="https://example.com/image.jpg"
+                              value={newProdImage}
+                              onChange={(e) => {
+                                setNewProdImage(e.target.value);
+                                setNewProdImageFile(null);
+                                setNewProdImagePreview(e.target.value);
+                              }}
+                              className="w-full h-24 px-3 py-2 rounded-lg border border-slate-250 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs font-semibold text-slate-800 resize-none placeholder:text-slate-400"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Image Preview Area */}
+                        {newProdImagePreview && (
+                          <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <img 
+                                src={newProdImagePreview} 
+                                alt="Preview" 
+                                className="h-14 w-14 rounded-lg object-cover border border-slate-150"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=600";
+                                }}
+                              />
+                              <div>
+                                <p className="text-[11px] font-bold text-slate-700">Image Selected</p>
+                                <p className="text-[9px] text-slate-400 truncate max-w-[200px]">
+                                  {newProdImageFile ? newProdImageFile.name : 'Remote URL Link'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewProdImageFile(null);
+                                setNewProdImagePreview('');
+                                setNewProdImage('');
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove image"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Description */}
