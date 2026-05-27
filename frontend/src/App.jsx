@@ -255,6 +255,7 @@ export default function App() {
   // Navigation & View
   const [currentTab, setCurrentTab] = useState('home'); // home, product, cart, orders, vendor, admin, profile, auth
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   // Scroll to top when tab or selected product changes
   useEffect(() => {
@@ -553,7 +554,6 @@ export default function App() {
   const [paymentPollingId, setPaymentPollingId] = useState(null);
 
   // Add Product Inputs
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [showAddProductForm, setShowAddProductForm] = useState(false);
   const [newProdName, setNewProdName] = useState('');
   const [newProdSku, setNewProdSku] = useState('');
