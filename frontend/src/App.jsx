@@ -931,6 +931,17 @@ export default function App() {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      triggerNotification("Please enter a valid email address!", "warning");
+      return;
+    }
+
+    if (normalizedPassword.length < 6) {
+      triggerNotification("Password must be at least 6 characters long!", "warning");
+      return;
+    }
+
     if (isRegisterMode) {
       const normalizedName = (authName || '').trim();
       if (!normalizedName) {
