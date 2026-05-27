@@ -9,7 +9,7 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', 'Noto Sans Khmer', system-ui, -apple-system, sans-serif;
   scroll-behavior: smooth;
 }
 
@@ -60,4 +60,28 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+.checkout-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.checkout-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.checkout-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.checkout-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.7);
+  border-radius: 999px;
+}
+
+.checkout-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.9);
 }

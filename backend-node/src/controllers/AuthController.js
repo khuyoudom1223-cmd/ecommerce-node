@@ -9,10 +9,11 @@ import bcrypt from 'bcryptjs';
 // @access  Public
 export const register = asyncHandler(async (req, res) => {
   const { name, email, password, role } = req.body;
-  const existing = await User.findOne({ email });
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const existing = await User.findOne({ email: normalizedEmail });
   if (existing) return error(res, 400, 'User already exists');
 
-  const user = await User.create({ name, email, password, role: role || 'User' });
+  const user = await User.create({ name, email: normalizedEmail, password, role: role || 'User' });
   const token = signToken({ id: user._id, role: user.role });
   return success(res, { token, user: { id: user._id, name: user.name, email: user.email, role: user.role } }, 201);
 });
@@ -22,7 +23,8 @@ export const register = asyncHandler(async (req, res) => {
 // @access  Public
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email }).select('+password');
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const user = await User.findOne({ email: normalizedEmail }).select('+password');
   if (!user) return error(res, 401, 'Invalid credentials');
   const match = await bcrypt.compare(password, user.password);
   if (!match) return error(res, 401, 'Invalid credentials');

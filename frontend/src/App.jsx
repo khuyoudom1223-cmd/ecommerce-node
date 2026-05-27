@@ -4,13 +4,135 @@ import {
   Search, Star, Plus, Minus, X, Trash2, CheckCircle2, 
   ArrowRightLeft, AlertCircle, ShoppingCart, RefreshCw,
   LogOut, PlusCircle, Settings, Edit3, Check, XCircle, Eye, EyeOff,
-  TrendingUp, Package, Users, DollarSign, BarChart2, Menu, Globe
+  TrendingUp, Package, Users, DollarSign, BarChart2, Menu, Globe,
+  ChevronDown, MapPin, Building2, Home, Sparkles
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line
 } from 'recharts';
 import { INITIAL_PRODUCTS, CATEGORIES } from './mockData';
+import {
+  getProvinces,
+  getDistricts,
+  getCommunes,
+  getVillages,
+  formatAddress,
+  getStats,
+} from 'kh-address';
+
+const CAMBODIA_COUNTRY_LABEL = {
+  en: 'Cambodia',
+  km: 'កម្ពុជា'
+};
+
+const ADMIN_LEVEL_LABELS = {
+  province: { en: 'Province / City', km: 'រាជធានី / ខេត្ត' },
+  district: { en: 'District / Khan / Srok', km: 'ស្រុក / ខណ្ឌ' },
+  commune: { en: 'Commune / Sangkat', km: 'ឃុំ / សង្កាត់' },
+  village: { en: 'Village / Phum', km: 'ភូមិ' }
+};
+
+const formatLocalizedName = (name, lang = 'en') => {
+  if (!name) return '';
+  const primary = lang === 'kh' ? (name.km || name.en) : (name.en || name.km);
+  const secondary = lang === 'kh' ? (name.en || name.km) : (name.km || name.en);
+  return secondary && secondary !== primary ? `${primary} (${secondary})` : primary;
+};
+
+const buildSearchText = (...parts) => parts.filter(Boolean).join(' ').toLowerCase();
+
+function SearchableCombobox({
+  label,
+  placeholder,
+  value,
+  options,
+  onSelect,
+  disabled = false,
+  helperText,
+  icon: Icon,
+  required = false
+}) {
+  const [query, setQuery] = useState(value || '');
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(value || '');
+  }, [value]);
+
+  const filteredOptions = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return options;
+    return options.filter(option => {
+      const haystack = [option.label, option.description, option.value, option.searchText].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [options, query]);
+
+  return (
+    <div className="relative space-y-2">
+      <label className="block text-sm font-medium text-slate-700">
+        {label}{required ? <span className="text-rose-500"> *</span> : null}
+      </label>
+      <div className="relative">
+        {Icon ? (
+          <Icon className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        ) : null}
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => !disabled && setIsOpen(true)}
+          onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={`w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 ${Icon ? 'pl-10' : ''}`}
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => !disabled && setIsOpen(prev => !prev)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed"
+          disabled={disabled}
+          aria-label={`Toggle ${label}`}
+        >
+          <ChevronDown className={`h-4 w-4 transition ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isOpen && !disabled ? (
+          <div className="absolute z-40 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="max-h-60 overflow-y-auto py-2">
+              {filteredOptions.length > 0 ? filteredOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onSelect(option.value);
+                    setQuery(option.label || option.value);
+                    setIsOpen(false);
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                    <Search className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{option.label}</span>
+                </button>
+              )) : (
+                <div className="px-4 py-6 text-center text-sm text-slate-500">No matching location found.</div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {helperText ? <p className="text-xs leading-5 text-slate-500">{helperText}</p> : null}
+    </div>
+  );
+}
 
 const TRANSLATIONS = {
   en: {
@@ -94,11 +216,16 @@ const TRANSLATIONS = {
 };
 
 export default function App() {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
   // Navigation & View
   const [currentTab, setCurrentTab] = useState('home'); // home, product, cart, orders, vendor, admin, profile, auth
   const [selectedProduct, setSelectedProduct] = useState(null);
+
+  // Scroll to top when tab or selected product changes
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [currentTab, selectedProduct]);
 
   // Language Localization (default 'kh' for Khmer)
   const [lang, setLang] = useState(() => {
@@ -188,8 +315,19 @@ export default function App() {
   // Authentication State
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const raw = localStorage.getItem('current_user');
-      return raw ? JSON.parse(raw) : null;
+      const raw = localStorage.getItem('current_user') || localStorage.getItem('logged_in_user');
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      const token = localStorage.getItem('auth_token');
+      const normalizedRole = (parsed?.role || 'user').toString().toLowerCase();
+      if (parsed && token && !parsed.token) {
+        return { ...parsed, token, role: normalizedRole };
+      }
+      if (parsed) {
+        return { ...parsed, role: normalizedRole };
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -200,22 +338,48 @@ export default function App() {
       if (currentUser) {
         const { password, ...safe } = currentUser;
         localStorage.setItem('current_user', JSON.stringify(safe));
+        localStorage.setItem('logged_in_user', JSON.stringify(safe));
+        if (safe.token) {
+          localStorage.setItem('auth_token', safe.token);
+        } else {
+          localStorage.removeItem('auth_token');
+        }
       } else {
         localStorage.removeItem('current_user');
+        localStorage.removeItem('logged_in_user');
+        localStorage.removeItem('auth_token');
       }
     } catch (e) {}
   }, [currentUser]);
   
   // DB Mock States: Centralized Users
-  const [users, setUsers] = useState([
-    { id: 1, name: "Alex Mercer",    email: "alex@example.com",    password: "password", role: "user" },
-    { id: 3, name: "Super Admin",    email: "admin@sleekcart.com", password: "admin",    role: "admin" },
-    { id: 8, name: "Site Admin",     email: "admin@topupgg.com",   password: "admin",    role: "admin" },
-    { id: 4, name: "Sofia Chen",     email: "sofia@example.com",   password: "password", role: "user" },
-    { id: 5, name: "James Rivera",   email: "james@example.com",   password: "password", role: "user" },
-    { id: 6, name: "Priya Sharma",   email: "priya@example.com",   password: "password", role: "user" },
-    { id: 7, name: "Michael Torres", email: "michael@example.com", password: "password", role: "user" },
-  ]);
+  const [users, setUsers] = useState(() => {
+    try {
+      const raw = localStorage.getItem('app_users');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+
+    return [
+      { id: 1, name: "Alex Mercer",    email: "alex@example.com",    password: "password", role: "user" },
+      { id: 3, name: "Super Admin",    email: "admin@sleekcart.com", password: "admin",    role: "admin" },
+      { id: 8, name: "Site Admin",     email: "admin@topupgg.com",   password: "admin",    role: "admin" },
+      { id: 4, name: "Sofia Chen",     email: "sofia@example.com",   password: "password", role: "user" },
+      { id: 5, name: "James Rivera",   email: "james@example.com",   password: "password", role: "user" },
+      { id: 6, name: "Priya Sharma",   email: "priya@example.com",   password: "password", role: "user" },
+      { id: 7, name: "Michael Torres", email: "michael@example.com", password: "password", role: "user" },
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('app_users', JSON.stringify(users));
+    } catch (e) {}
+  }, [users]);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
@@ -253,8 +417,92 @@ export default function App() {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [checkoutFullName, setCheckoutFullName] = useState('');
   const [checkoutPhone, setCheckoutPhone] = useState('');
-  const [checkoutLocation, setCheckoutLocation] = useState('');
+  const addressLocale = lang === 'kh' ? 'kh' : 'en';
+  const addressStats = useMemo(() => getStats(), []);
+  const [checkoutProvinceCode, setCheckoutProvinceCode] = useState('');
+  const [checkoutDistrictCode, setCheckoutDistrictCode] = useState('');
+  const [checkoutCommuneCode, setCheckoutCommuneCode] = useState('');
+  const [checkoutVillageCode, setCheckoutVillageCode] = useState('');
+  const [checkoutHouseNumber, setCheckoutHouseNumber] = useState('');
   const [checkoutNote, setCheckoutNote] = useState('');
+  const provinceData = useMemo(() => getProvinces(), []);
+  const selectedProvinceData = useMemo(
+    () => provinceData.find(province => province.code === checkoutProvinceCode) || null,
+    [provinceData, checkoutProvinceCode]
+  );
+  const districtData = useMemo(
+    () => (checkoutProvinceCode ? getDistricts(checkoutProvinceCode) : []),
+    [checkoutProvinceCode]
+  );
+  const selectedDistrictData = useMemo(
+    () => districtData.find(district => district.code === checkoutDistrictCode) || null,
+    [districtData, checkoutDistrictCode]
+  );
+  const communeData = useMemo(
+    () => (checkoutDistrictCode ? getCommunes(checkoutDistrictCode) : []),
+    [checkoutDistrictCode]
+  );
+  const selectedCommuneData = useMemo(
+    () => communeData.find(commune => commune.code === checkoutCommuneCode) || null,
+    [communeData, checkoutCommuneCode]
+  );
+  const villageData = useMemo(
+    () => (checkoutCommuneCode ? getVillages(checkoutCommuneCode) : []),
+    [checkoutCommuneCode]
+  );
+  const provinceOptions = useMemo(
+    () => provinceData.map(province => ({
+      value: province.code,
+      label: formatLocalizedName(province.name, addressLocale),
+      description: ADMIN_LEVEL_LABELS.province[addressLocale],
+      searchText: buildSearchText(province.code, province.name.en, province.name.km)
+    })),
+    [provinceData, addressLocale]
+  );
+  const districtOptions = useMemo(
+    () => districtData.map(district => ({
+      value: district.code,
+      label: formatLocalizedName(district.name, addressLocale),
+      description: ADMIN_LEVEL_LABELS.district[addressLocale],
+      searchText: buildSearchText(district.code, district.name.en, district.name.km)
+    })),
+    [districtData, addressLocale]
+  );
+  const communeOptions = useMemo(
+    () => communeData.map(commune => ({
+      value: commune.code,
+      label: formatLocalizedName(commune.name, addressLocale),
+      description: ADMIN_LEVEL_LABELS.commune[addressLocale],
+      searchText: buildSearchText(commune.code, commune.name.en, commune.name.km)
+    })),
+    [communeData, addressLocale]
+  );
+  const villageOptions = useMemo(
+    () => villageData.map(village => ({
+      value: village.code,
+      label: formatLocalizedName(village.name, addressLocale),
+      description: ADMIN_LEVEL_LABELS.village[addressLocale],
+      searchText: buildSearchText(village.code, village.name.en, village.name.km)
+    })),
+    [villageData, addressLocale]
+  );
+  const checkoutLocation = useMemo(() => {
+    const hierarchy = formatAddress(
+      {
+        provinceCode: checkoutProvinceCode,
+        districtCode: checkoutDistrictCode,
+        communeCode: checkoutCommuneCode,
+        villageCode: checkoutVillageCode,
+      },
+      { lang: addressLocale, separator: ' > ', order: ['province', 'district', 'commune', 'village'] }
+    );
+    const detail = checkoutHouseNumber.trim();
+    const countryLabel = CAMBODIA_COUNTRY_LABEL[addressLocale];
+    return [countryLabel, hierarchy].filter(Boolean).join(' > ') + (detail ? `, ${detail}` : '');
+  }, [addressLocale, checkoutProvinceCode, checkoutDistrictCode, checkoutCommuneCode, checkoutVillageCode, checkoutHouseNumber]);
+  const isCheckoutAddressComplete = Boolean(
+    checkoutProvinceCode && checkoutDistrictCode && checkoutCommuneCode && checkoutVillageCode && checkoutHouseNumber.trim()
+  );
   // KHQR Payment state
   const [showKHQRModal, setShowKHQRModal] = useState(false);
   const [khqrPayload, setKhqrPayload] = useState(null);
@@ -286,6 +534,17 @@ export default function App() {
   const [authName, setAuthName] = useState('');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const resetCheckoutForm = () => {
+    setCheckoutFullName('');
+    setCheckoutPhone('');
+    setCheckoutProvinceCode('');
+    setCheckoutDistrictCode('');
+    setCheckoutCommuneCode('');
+    setCheckoutVillageCode('');
+    setCheckoutHouseNumber('');
+    setCheckoutNote('');
+  };
 
   // Notification helper
   const triggerNotification = (message, type = 'success') => {
@@ -436,9 +695,16 @@ export default function App() {
 
     triggerNotification('Initiating order and generating KHQR code...', 'info');
 
+    const authHeaders = {};
+    try {
+      if (currentUser?.token) {
+        authHeaders.Authorization = `Bearer ${currentUser.token}`;
+      }
+    } catch (e) {}
+
     fetch(`${API_BASE_URL}/api/checkout/generate-qr`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(requestBody)
     })
       .then(r => {
@@ -478,7 +744,8 @@ export default function App() {
         // 2. Set KHQR States
         setKhqrPayload({
           qr_string: data.qr_string,
-          qr_image_url: data.qr_image
+          qr_image_url: data.qr_image,
+          payment_reference: data.payment_reference
         });
         setKhqrOrderId(createdOrderDisplayId);
         setShowKHQRModal(true);
@@ -490,7 +757,19 @@ export default function App() {
 
         // 3. Start payment status polling every 3-5 seconds (set to 4s)
         const pid = setInterval(() => {
-          fetch(`${API_BASE_URL}/api/payments/status/${data.order_id}`)
+          const pollHeaders = {};
+          try {
+            if (currentUser?.token) {
+              pollHeaders.Authorization = `Bearer ${currentUser.token}`;
+            }
+            if (data.payment_reference) {
+              pollHeaders['x-payment-reference'] = data.payment_reference;
+            }
+          } catch (e) {}
+
+          fetch(`${API_BASE_URL}/api/payments/status/${data.order_id}`, {
+            headers: pollHeaders
+          })
             .then(r => r.json())
             .then(statusData => {
               if (statusData && statusData.paid) {
@@ -509,9 +788,7 @@ export default function App() {
                 setShowKHQRModal(false);
                 setCart([]);
                 setShowCheckoutModal(false);
-                setCheckoutPhone('');
-                setCheckoutLocation('');
-                setCheckoutNote('');
+                resetCheckoutForm();
                 setCurrentTab('orders');
               }
             })
@@ -644,51 +921,121 @@ export default function App() {
 
 
   // Auth Operations
-  const handleAuthSubmit = (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!authEmail || !authPassword) {
+    const normalizedEmail = (authEmail || '').trim().toLowerCase();
+    const normalizedPassword = (authPassword || '').trim();
+
+    if (!normalizedEmail || !normalizedPassword) {
       triggerNotification("Please fill in all auth credentials!", "warning");
       return;
     }
 
     if (isRegisterMode) {
-      const newUser = {
-        id: Math.floor(Math.random() * 1000 + 10),
-        name: authName || "New User",
-        email: authEmail,
-        password: authPassword,
-        role: 'user',
-      };
-      setCurrentUser(newUser);
-      setUsers([...users, newUser]);
-      triggerNotification(`Customer Registration successful!`, "success");
-      setCurrentTab('home');
-    } else {
-      // Check account exists?
-      const existingUser = users.find(u => u.email === authEmail);
-      
-      if (!existingUser) {
-        triggerNotification("Invalid email or password", "error");
+      const normalizedName = (authName || '').trim();
+      if (!normalizedName) {
+        triggerNotification("Name is required", "warning");
         return;
       }
 
-      // Verify Password
-      if (existingUser.password !== authPassword) {
-        triggerNotification("Invalid password", "error");
-        return;
-      }
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: normalizedName,
+            email: normalizedEmail,
+            password: normalizedPassword,
+            role: 'User'
+          })
+        });
 
-      // Password correct? Yes -> Continue
-      setCurrentUser(existingUser);
-      triggerNotification("Successfully logged in!", "success");
+        const payload = await response.json();
+        if (!response.ok || !payload?.success) {
+          triggerNotification(payload?.message || 'Registration failed', 'error');
+          return;
+        }
 
-      // Check User Role
-      if (existingUser.role === 'admin') {
-        // Open Admin Dashboard
-        setCurrentTab('admin');
-      } else {
-        // Open User Dashboard
+        const apiUser = payload?.data?.user;
+        const apiToken = payload?.data?.token;
+        const sessionUser = {
+          id: apiUser?.id || apiUser?._id,
+          name: apiUser?.name,
+          email: (apiUser?.email || normalizedEmail).toLowerCase(),
+          role: (apiUser?.role || 'User').toLowerCase(),
+          token: apiToken || null,
+        };
+
+        setCurrentUser(sessionUser);
+        setUsers(prev => {
+          const exists = prev.some(u => (u.email || '').trim().toLowerCase() === sessionUser.email);
+          if (exists) {
+            return prev.map(u =>
+              (u.email || '').trim().toLowerCase() === sessionUser.email
+                ? { ...u, ...sessionUser }
+                : u
+            );
+          }
+          return [...prev, sessionUser];
+        });
+
+        triggerNotification('Customer Registration successful!', 'success');
+        setAuthName('');
+        setAuthEmail('');
+        setAuthPassword('');
+        setIsRegisterMode(false);
+        setSelectedProduct(null);
         setCurrentTab('home');
+      } catch (err) {
+        triggerNotification('Unable to connect to authentication server', 'error');
+      }
+    } else {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: normalizedEmail,
+            password: normalizedPassword,
+          })
+        });
+
+        const payload = await response.json();
+        if (!response.ok || !payload?.success) {
+          triggerNotification(payload?.message || 'Invalid email or password', 'error');
+          return;
+        }
+
+        const apiUser = payload?.data?.user;
+        const apiToken = payload?.data?.token;
+        const sessionUser = {
+          id: apiUser?.id || apiUser?._id,
+          name: apiUser?.name,
+          email: (apiUser?.email || normalizedEmail).toLowerCase(),
+          role: (apiUser?.role || 'User').toLowerCase(),
+          token: apiToken || null,
+        };
+
+        setCurrentUser(sessionUser);
+        setUsers(prev => {
+          const exists = prev.some(u => (u.email || '').trim().toLowerCase() === sessionUser.email);
+          if (exists) {
+            return prev.map(u =>
+              (u.email || '').trim().toLowerCase() === sessionUser.email
+                ? { ...u, ...sessionUser }
+                : u
+            );
+          }
+          return [...prev, sessionUser];
+        });
+
+        triggerNotification('Successfully logged in!', 'success');
+        setAuthEmail('');
+        setAuthPassword('');
+        setSelectedProduct(null);
+        setCurrentTab('home');
+      } catch (err) {
+        triggerNotification('Unable to connect to authentication server', 'error');
       }
     }
   };
@@ -809,6 +1156,7 @@ export default function App() {
                     setAuthPassword('');
                     setAuthEmail('');
                     triggerNotification("Logged out successfully");
+                    setSelectedProduct(null);
                     setCurrentTab('home');
                     setShowMobileMenu(false);
                   }}
@@ -1260,15 +1608,33 @@ export default function App() {
                         />
                         {/* Elegant bottom gradient */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+
+                        {/* Discount badge */}
+                        {discount > 0 && (
+                          <span className="absolute top-2.5 left-2.5 bg-blue-600 text-white text-[10px] font-extrabold px-2 py-1 rounded-full shadow-md">
+                            -{discount}% OFF
+                          </span>
+                        )}
                         
                         {/* Overlay text at bottom-left corner */}
-                        <div className="absolute bottom-3 left-3 text-left space-y-0.5 max-w-[85%]">
+                        <div className="absolute bottom-3 left-3 right-3 text-left space-y-1">
                           <h4 className="text-sm font-extrabold text-white leading-tight drop-shadow-sm uppercase">
                             {product.discountPrice ? 'Flash Sale' : product.id % 2 === 0 ? '30% Off All Items' : 'Exclusive Brand'}
                           </h4>
                           <p className="text-[10px] text-white/95 font-medium drop-shadow-xs truncate">
                             {product.discountPrice ? 'New arrivals, trendsetting' : 'Grab limited offers'}
                           </p>
+
+                          <div className="flex items-center gap-2 pt-0.5">
+                            {product.discountPrice ? (
+                              <>
+                                <span className="text-sm font-extrabold text-white">${product.discountPrice.toFixed(2)}</span>
+                                <span className="text-[10px] text-white/80 line-through">${product.price.toFixed(2)}</span>
+                              </>
+                            ) : (
+                              <span className="text-sm font-extrabold text-white">${product.price.toFixed(2)}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1289,17 +1655,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Premium Marketing Banner */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 text-left">
-              <div className="bg-slate-900 rounded-3xl p-8 flex flex-col justify-between items-start text-white space-y-6">
-                <span className="text-[10px] font-extrabold tracking-widest text-blue-400 uppercase">Platform Control</span>
-                <h3 className="text-2xl font-black text-white">Centralized Management System</h3>
-                <p className="text-slate-400 text-sm">Super Administrator dashboard access. Instantly manage orders and catalog operations centrally.</p>
-                <button onClick={() => setCurrentTab('auth')} className="bg-white text-slate-900 font-bold px-5 py-2.5 rounded-xl text-xs hover:bg-slate-100 transition cursor-pointer">
-                  Admin Login
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
@@ -2309,6 +2664,7 @@ export default function App() {
                     setAuthPassword('');
                     setAuthEmail('');
                     triggerNotification("Logged out successfully");
+                    setSelectedProduct(null);
                     setCurrentTab('home');
                   }}
                   className="bg-rose-50 text-rose-700 border border-rose-100 hover:bg-rose-100 font-bold px-5 py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center gap-1"
@@ -2396,104 +2752,176 @@ export default function App() {
 
       {/* Checkout Modal Form */}
       {showCheckoutModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 flex flex-col overflow-hidden">
-            
+            <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/65 p-0 backdrop-blur-xl sm:items-center sm:p-6">
+              <div className="relative flex w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-full sm:max-w-3xl flex-col overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-white/70 bg-white/98 shadow-2xl">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-44 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.24),_transparent_45%),radial-gradient(circle_at_top_right,_rgba(99,102,241,0.22),_transparent_38%)]" />
+
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-6 relative flex justify-between items-center text-left">
-              <div>
-                <h3 className="text-xl font-extrabold">Delivery & Checkout Details</h3>
-                <p className="text-blue-100 text-xs mt-1">Please enter your checkout details to complete your clothing order.</p>
+                <div className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-5 py-4 text-left text-slate-900 backdrop-blur-xl sm:px-6">
+                  <div className="max-w-2xl">
+                    <h3 className="text-lg font-semibold tracking-tight sm:text-xl">Checkout</h3>
               </div>
-              <button 
-                onClick={() => setShowCheckoutModal(false)}
-                className="p-1.5 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition cursor-pointer"
+              <button
+                onClick={() => {
+                  setShowCheckoutModal(false);
+                  resetCheckoutForm();
+                }}
+                    className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 cursor-pointer"
+                aria-label="Close checkout modal"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Modal Body Form */}
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleCheckout(checkoutFullName, checkoutPhone, checkoutLocation, checkoutNote);
-            }} className="p-6 space-y-4 text-left">
-              
-              {/* Full Name */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Full Name:</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Alex Mercer"
-                  value={checkoutFullName}
-                  onChange={(e) => setCheckoutFullName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 bg-slate-50 text-sm"
-                />
-              </div>
-
-              {/* Phone Number */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Phone Number <span className="text-rose-500">*</span>:</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="e.g. +1 (555) 019-2834"
-                  value={checkoutPhone}
-                  onChange={(e) => setCheckoutPhone(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 bg-slate-50 text-sm"
-                />
-              </div>
-
-              {/* Delivery Location / Address */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Delivery Location / Address <span className="text-rose-500">*</span>:</label>
-                <textarea
-                  required
-                  rows="3"
-                  placeholder="e.g. 5th Avenue, Suite 100, New York, NY 10001"
-                  value={checkoutLocation}
-                  onChange={(e) => setCheckoutLocation(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 bg-slate-50 text-sm resize-none"
-                />
-              </div>
-
-              {/* Optional Note */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Optional Note:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Please leave package at front gate"
-                  value={checkoutNote}
-                  onChange={(e) => setCheckoutNote(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 bg-slate-50 text-sm"
-                />
-              </div>
-
-              {/* Cart Summary Snippet */}
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 mt-2 text-xs">
-                <div className="flex justify-between items-center text-slate-500">
-                  <span>Bag Items:</span>
-                  <span className="font-bold text-slate-700">{cart.reduce((s, i) => s + i.quantity, 0)} items</span>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!isCheckoutAddressComplete) {
+                  triggerNotification('Please complete the Cambodia address selector before placing your order.', 'warning');
+                  return;
+                }
+                handleCheckout(checkoutFullName, checkoutPhone, checkoutLocation, checkoutNote);
+              }}
+              className="checkout-scrollbar grid min-h-0 flex-1 gap-5 overflow-y-auto scroll-smooth overscroll-contain px-5 pt-5 pb-36 text-left sm:px-6 sm:py-6 sm:pb-6"
+            >
+              <div className="space-y-4">
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-blue-600" />
+                    <h4 className="text-sm font-semibold text-slate-800">Contact details</h4>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-slate-700">Full name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Alex Mercer"
+                        value={checkoutFullName}
+                        onChange={(e) => setCheckoutFullName(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-slate-700">Phone number <span className="text-rose-500">*</span></label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="e.g. +855 12 345 678"
+                        value={checkoutPhone}
+                        onChange={(e) => setCheckoutPhone(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-slate-500">
-                  <span>Estimated Total Amount:</span>
-                  <strong className="text-blue-700 text-sm">${cartTotal.toFixed(2)}</strong>
+
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-blue-600" />
+                    <h4 className="text-sm font-semibold text-slate-800">Address</h4>
+                  </div>
+                  <div className="space-y-4">
+                    <SearchableCombobox
+                      label={ADMIN_LEVEL_LABELS.province[addressLocale]}
+                      placeholder={addressLocale === 'kh' ? 'ស្វែងរករាជធានី ឬ ខេត្ត' : 'Search province or city'}
+                      value={checkoutProvinceCode}
+                      options={provinceOptions}
+                      onSelect={(provinceCode) => {
+                        setCheckoutProvinceCode(provinceCode);
+                        setCheckoutDistrictCode('');
+                        setCheckoutCommuneCode('');
+                        setCheckoutVillageCode('');
+                      }}
+                      icon={Globe}
+                      required
+                    />
+
+                    <SearchableCombobox
+                      label={ADMIN_LEVEL_LABELS.district[addressLocale]}
+                      placeholder={checkoutProvinceCode ? (addressLocale === 'kh' ? 'ស្វែងរកស្រុក / ខណ្ឌ' : 'Search district') : (addressLocale === 'kh' ? 'ជ្រើសរើសរាជធានី ឬ ខេត្តជាមុនសិន' : 'Choose a province first')}
+                      value={checkoutDistrictCode}
+                      options={districtOptions}
+                      onSelect={(districtCode) => {
+                        setCheckoutDistrictCode(districtCode);
+                        setCheckoutCommuneCode('');
+                        setCheckoutVillageCode('');
+                      }}
+                      disabled={!checkoutProvinceCode}
+                      icon={Building2}
+                      required
+                    />
+
+                    <SearchableCombobox
+                      label={ADMIN_LEVEL_LABELS.commune[addressLocale]}
+                      placeholder={checkoutDistrictCode ? (addressLocale === 'kh' ? 'ស្វែងរកឃុំ / សង្កាត់' : 'Search commune or sangkat') : (addressLocale === 'kh' ? 'ជ្រើសរើសស្រុក / ខណ្ឌជាមុនសិន' : 'Choose a district first')}
+                      value={checkoutCommuneCode}
+                      options={communeOptions}
+                      onSelect={(communeCode) => {
+                        setCheckoutCommuneCode(communeCode);
+                        setCheckoutVillageCode('');
+                      }}
+                      disabled={!checkoutDistrictCode}
+                      icon={Layers}
+                      required
+                    />
+
+                    <SearchableCombobox
+                      label={ADMIN_LEVEL_LABELS.village[addressLocale]}
+                      placeholder={checkoutCommuneCode ? (addressLocale === 'kh' ? 'ស្វែងរកភូមិ' : 'Search village') : (addressLocale === 'kh' ? 'ជ្រើសរើសឃុំ / សង្កាត់ជាមុនសិន' : 'Choose a commune first')}
+                      value={checkoutVillageCode}
+                      options={villageOptions}
+                      onSelect={setCheckoutVillageCode}
+                      disabled={!checkoutCommuneCode}
+                      icon={Home}
+                      required
+                    />
+
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-slate-700">Detailed address <span className="text-rose-500">*</span></label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="House 12, Street 271"
+                        value={checkoutHouseNumber}
+                        onChange={(e) => setCheckoutHouseNumber(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center gap-2">
+                    <Edit3 className="h-4 w-4 text-blue-600" />
+                    <h4 className="text-sm font-semibold text-slate-800">Note</h4>
+                  </div>
+                  <textarea
+                    rows="3"
+                    placeholder="Optional delivery note"
+                    value={checkoutNote}
+                    onChange={(e) => setCheckoutNote(e.target.value)}
+                    className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                  />
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 border-t border-slate-100">
+              <div className="flex gap-3 border-t border-slate-200 pt-4 sm:pt-5">
                 <button
                   type="button"
-                  onClick={() => setShowCheckoutModal(false)}
-                  className="w-1/2 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition cursor-pointer"
+                  onClick={() => {
+                    setShowCheckoutModal(false);
+                    resetCheckoutForm();
+                  }}
+                  className="w-1/2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={!checkoutPhone.trim() || !isCheckoutAddressComplete}
+                  className="flex w-1/2 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                 >
                   Complete Order <CheckCircle2 className="h-4.5 w-4.5" />
                 </button>
@@ -2591,12 +3019,6 @@ export default function App() {
             </ul>
           </div>
           <div className="space-y-4">
-            <strong className="text-white text-sm font-semibold tracking-wider block uppercase">Platform</strong>
-            <ul className="space-y-2 text-xs">
-              <li><button onClick={() => switchRole('admin')} className="hover:text-white cursor-pointer transition">Admin Dashboard</button></li>
-            </ul>
-          </div>
-          <div className="space-y-4">
             <strong className="text-white text-sm font-semibold tracking-wider block uppercase">Security & Payments</strong>
             <p className="text-xs font-light text-slate-400 leading-relaxed">
               All transactions are secured locally through double-entry ledger security systems. Money from user is processed through the centralized admin panel.
@@ -2604,7 +3026,7 @@ export default function App() {
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-light">
-          <span>&copy; {new Date().getFullYear()} Azurea Premium. All Rights Reserved.</span>
+          <span>&copy; 2026 Khuy Oudom. All Rights Reserved.</span>
           <div className="flex gap-6">
             <a href="#" className="hover:text-white">Privacy Policy</a>
             <a href="#" className="hover:text-white">Terms of Service</a>
