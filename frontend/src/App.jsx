@@ -5,7 +5,8 @@ import {
   ArrowRightLeft, AlertCircle, ShoppingCart, RefreshCw,
   LogOut, PlusCircle, Settings, Edit3, Check, XCircle, Eye, EyeOff,
   TrendingUp, Package, Users, DollarSign, BarChart2, Menu, Globe,
-  ChevronDown, MapPin, Building2, Home, Sparkles
+  ChevronDown, MapPin, Building2, Home, Sparkles,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -215,6 +216,39 @@ const TRANSLATIONS = {
   }
 };
 
+const HERO_SLIDES = [
+  {
+    tag: "New Arrival • Spring Collection",
+    title: "Redefining Modern Elegance",
+    description: "Discover a high-end capsule wardrobe crafted for durability, sleek styling, and comfortable fit.",
+    desktopImage: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=1200&auto=format&fit=crop",
+    mobileImage: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800&auto=format&fit=crop",
+    bgColor: "from-blue-700 to-indigo-800",
+    buttonText: "Shop Now",
+    action: 'shop'
+  },
+  {
+    tag: "High Fashion • Editorial Showcase",
+    title: "Beauty Feast, Fashion Awards",
+    description: "Experience premium designer collections that showcase creativity, precision tailoring, and heritage.",
+    desktopImage: "https://images.unsplash.com/photo-1469334031218-e382a71b716b?q=80&w=1200&auto=format&fit=crop",
+    mobileImage: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=800",
+    bgColor: "from-purple-800 to-rose-750",
+    buttonText: "Check Details",
+    action: 'details'
+  },
+  {
+    tag: "Capsule Essentials • Winter Collection",
+    title: "Timeless Quality, Perfect Sizing",
+    description: "Curated heavy winter coats, cashmere sweaters, and tailoring designed to shield from the elements in style.",
+    desktopImage: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=1200&auto=format&fit=crop",
+    mobileImage: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?q=80&w=800",
+    bgColor: "from-emerald-800 to-teal-900",
+    buttonText: "Browse Coats",
+    action: 'coats'
+  }
+];
+
 export default function App() {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
@@ -380,6 +414,15 @@ export default function App() {
       localStorage.setItem('app_users', JSON.stringify(users));
     } catch (e) {}
   }, [users]);
+
+  // Autoplay timer for Hero Slide Banner
+  useEffect(() => {
+    if (currentTab !== 'home' || selectedProduct) return;
+    const timer = setTimeout(() => {
+      setCurrentSlideIndex((prev) => (prev + 1) % 3);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [currentSlideIndex, currentTab, selectedProduct]);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
@@ -510,6 +553,7 @@ export default function App() {
   const [paymentPollingId, setPaymentPollingId] = useState(null);
 
   // Add Product Inputs
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [showAddProductForm, setShowAddProductForm] = useState(false);
   const [newProdName, setNewProdName] = useState('');
   const [newProdSku, setNewProdSku] = useState('');
@@ -1410,106 +1454,177 @@ export default function App() {
           <div className="space-y-12">
             
             {/* Hero Section */}
-            {/* Desktop Hero Section */}
-            <div className="hidden md:flex relative bg-gradient-to-r from-blue-700 to-indigo-800 rounded-3xl overflow-hidden shadow-2xl flex-row items-center justify-between p-8 md:p-16 min-h-[450px]">
-              <div className="absolute inset-0 bg-opacity-20 bg-cover bg-center mix-blend-overlay" />
+            <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl group min-h-[420px] md:min-h-[480px]">
               
-              <div className="relative z-10 space-y-6 max-w-xl text-left">
-                <span className="inline-block px-3 py-1 bg-blue-500/25 border border-blue-400/30 rounded-full text-xs font-semibold text-blue-200 uppercase tracking-widest">
-                  New Arrival • Spring Collection
-                </span>
-                <h1 className="text-4xl md:text-6xl font-black text-white leading-tight">
-                  Redefining modern elegance.
-                </h1>
-                <p className="text-blue-100 text-lg md:text-xl font-light">
-                  Discover a high-end capsule wardrobe crafted for durability, sleek styling, and comfortable fit.
-                </p>
-                <div className="flex gap-4">
-                  <button onClick={() => {
-                    const featured = products.find(p => p.id === 1);
-                    if (featured) {
-                      setSelectedProduct(featured);
-                      setCurrentTab('product');
-                    }
-                  }} className="bg-white text-blue-900 font-bold px-6 py-3.5 rounded-full shadow-lg hover:bg-blue-50 transition flex items-center gap-2 cursor-pointer">
-                    Shop Now <ShoppingCart className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => {
-                    setSelectedCategory('Coats');
-                    document.getElementById('catalog-start')?.scrollIntoView();
-                  }} className="bg-transparent border-2 border-white/60 text-white hover:border-white font-bold px-6 py-3.5 rounded-full transition cursor-pointer">
-                    Browse Coats
-                  </button>
-                </div>
+              {/* DESKTOP VIEW SLIDES */}
+              <div className="hidden md:block">
+                {HERO_SLIDES.map((s, idx) => (
+                  <div
+                    key={`desktop-${idx}`}
+                    className={`absolute inset-0 bg-gradient-to-r ${s.bgColor} p-8 md:p-16 flex flex-row items-center justify-between transition-all duration-700 ease-in-out ${
+                      idx === currentSlideIndex 
+                        ? 'opacity-100 pointer-events-auto scale-100 translate-x-0' 
+                        : 'opacity-0 pointer-events-none scale-95 translate-x-4'
+                    }`}
+                  >
+                    <div className="relative z-10 space-y-6 max-w-xl text-left">
+                      <span className="inline-block px-3 py-1 bg-white/10 border border-white/20 rounded-full text-xs font-semibold text-white/95 uppercase tracking-widest animate-pulse">
+                        {s.tag}
+                      </span>
+                      <h1 className="text-4xl md:text-5xl font-black text-white leading-tight drop-shadow-sm">
+                        {s.title}
+                      </h1>
+                      <p className="text-white/90 text-base md:text-lg font-light leading-relaxed">
+                        {s.description}
+                      </p>
+                      <div className="flex gap-4 pt-2">
+                        <button
+                          onClick={() => {
+                            if (s.action === 'shop') {
+                              const featured = products.find(p => p.id === 1);
+                              if (featured) {
+                                setSelectedProduct(featured);
+                                setCurrentTab('product');
+                              }
+                            } else if (s.action === 'details') {
+                              setSelectedCategory('All');
+                              document.getElementById('catalog-start')?.scrollIntoView({ behavior: 'smooth' });
+                            } else {
+                              setSelectedCategory('Coats');
+                              document.getElementById('catalog-start')?.scrollIntoView({ behavior: 'smooth' });
+                            }
+                          }}
+                          className="bg-white text-slate-900 hover:bg-slate-50 font-bold px-6 py-3.5 rounded-full shadow-lg transition flex items-center gap-2 cursor-pointer"
+                        >
+                          {s.buttonText} <ShoppingCart className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative z-10 w-full md:w-1/2 max-w-md aspect-[4/3] rounded-2xl overflow-hidden shadow-lg border-4 border-white/10 transform transition-transform duration-1000 ease-out hover:scale-102">
+                      <img 
+                        src={s.desktopImage} 
+                        alt={s.title} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800";
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {/* Render generated image as hero preview */}
-              <div className="relative z-10 w-full md:w-1/2 max-w-md aspect-[4/3] rounded-2xl overflow-hidden shadow-lg border-4 border-white/10">
-                <img 
-                  src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?q=80&w=800&auto=format&fit=crop" 
-                  alt="Premium Fashion Models" 
-                  className="w-full h-full object-cover"
-                />
+              {/* MOBILE VIEW SLIDES (aspect-[4/5]) */}
+              <div className="block md:hidden">
+                {HERO_SLIDES.map((s, idx) => (
+                  <div
+                    key={`mobile-${idx}`}
+                    className={`absolute inset-0 transition-all duration-700 ease-in-out ${
+                      idx === currentSlideIndex 
+                        ? 'opacity-100 pointer-events-auto scale-100' 
+                        : 'opacity-0 pointer-events-none scale-95'
+                    }`}
+                  >
+                    <div className="relative w-full h-[450px] bg-slate-100">
+                      <img 
+                        src={s.mobileImage} 
+                        alt={s.title} 
+                        className="w-full h-full object-cover brightness-[0.85]"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=800";
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/30" />
+                      
+                      <div className="absolute inset-x-6 top-1/4 space-y-3 text-left">
+                        <span className="text-white/95 text-xs font-semibold tracking-wider block uppercase">
+                          {s.tag.split(' • ')[0]}
+                        </span>
+                        <h1 className="text-3xl font-black text-white tracking-tight leading-snug drop-shadow-md">
+                          {s.title}
+                        </h1>
+                        <p className="text-white/95 text-sm font-medium leading-relaxed drop-shadow-sm max-w-[90%]">
+                          {s.description}
+                        </p>
+                        
+                        <div className="pt-4">
+                          <button 
+                            onClick={() => {
+                              if (s.action === 'shop') {
+                                const featured = products.find(p => p.id === 1);
+                                if (featured) {
+                                  setSelectedProduct(featured);
+                                  setCurrentTab('product');
+                                }
+                              } else if (s.action === 'details') {
+                                setSelectedCategory('All');
+                                document.getElementById('catalog-start')?.scrollIntoView({ behavior: 'smooth' });
+                              } else {
+                                setSelectedCategory('Coats');
+                                document.getElementById('catalog-start')?.scrollIntoView({ behavior: 'smooth' });
+                              }
+                            }}
+                            className="bg-white text-slate-900 border border-slate-900/10 font-bold px-6 py-3 rounded-lg text-xs shadow-md transition hover:bg-slate-50 cursor-pointer"
+                          >
+                            {s.buttonText}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Navigation Arrows (visible on hover) */}
+              <button
+                type="button"
+                onClick={() => setCurrentSlideIndex((prev) => (prev === 0 ? HERO_SLIDES.length - 1 : prev - 1))}
+                className="absolute left-4 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/35 hover:bg-black/50 text-white transition-opacity opacity-0 group-hover:opacity-100 cursor-pointer animate-fade-in"
+                aria-label="Previous Slide"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentSlideIndex((prev) => (prev === HERO_SLIDES.length - 1 ? 0 : prev + 1))}
+                className="absolute right-4 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/35 hover:bg-black/50 text-white transition-opacity opacity-0 group-hover:opacity-100 cursor-pointer animate-fade-in"
+                aria-label="Next Slide"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+
+              {/* Dot Indicators */}
+              <div className="absolute bottom-6 inset-x-0 flex justify-center gap-2 z-20">
+                {HERO_SLIDES.map((_, idx) => (
+                  <button
+                    type="button"
+                    key={`dot-${idx}`}
+                    onClick={() => setCurrentSlideIndex(idx)}
+                    className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                      idx === currentSlideIndex ? 'w-6 bg-white' : 'w-1.5 bg-white/40 hover:bg-white/60'
+                    }`}
+                    aria-label={`Go to slide ${idx + 1}`}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* Mobile/Phone Hero Section (looks exactly like the user's screenshot on mobile viewport) */}
-            <div className="block md:hidden relative w-full rounded-2xl overflow-hidden shadow-lg text-left">
-              {/* Main Model Background Image */}
-              <div className="relative w-full aspect-[4/5] bg-slate-100">
-                <img 
-                  src="https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=800" 
-                  alt="Fashion Beauty Awards" 
-                  className="w-full h-full object-cover brightness-[0.9]"
-                />
-                {/* Visual Overlay for contrast */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/25" />
-                
-                {/* Foreground Text */}
-                <div className="absolute inset-x-6 top-1/4 space-y-3">
-                  <span className="text-white/95 text-xs font-semibold tracking-wider block uppercase">Fashion</span>
-                  <h1 className="text-3xl font-black text-white tracking-tight leading-snug drop-shadow-md">
-                    Beauty Feast, Fashion Awards
-                  </h1>
-                  <p className="text-white/90 text-sm font-medium leading-relaxed drop-shadow-sm max-w-[85%]">
-                    Immediately buyers enjoy a lifetime warranty
-                  </p>
-                  
-                  <div className="pt-4">
-                    <button 
-                      onClick={() => {
-                        setSelectedCategory('All');
-                        document.getElementById('catalog-start')?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="bg-white text-slate-900 border border-slate-900/10 font-bold px-6 py-3 rounded-lg text-xs shadow-md transition hover:bg-slate-50 cursor-pointer"
-                    >
-                      Check Details
-                    </button>
-                  </div>
-                </div>
-
-                {/* Dots indicators centered at bottom of hero */}
-                <div className="absolute bottom-4 inset-x-0 flex justify-center gap-2">
-                  <span className="w-6 h-1 rounded-full bg-white" />
-                  <span className="w-2 h-1 rounded-full bg-white/40" />
-                  <span className="w-2 h-1 rounded-full bg-white/40" />
-                </div>
-              </div>
-
-              {/* Horizontal Moving Marquee Ticker (pink/beige background) */}
-              <div className="bg-[#ebdcd1] border-y border-orange-200/20 py-2.5 overflow-hidden w-full relative flex items-center">
-                <div className="animate-marquee whitespace-nowrap flex gap-8 text-[11px] font-bold text-slate-800 tracking-wider uppercase">
-                  <span>80% Off!</span>
-                  <span>Fashion Gala: Up to 80% Off!</span>
-                  <span>80% Off!</span>
-                  <span>Fashion Gala: Up to 80% Off!</span>
-                  <span>80% Off!</span>
-                  <span>Fashion Gala: Up to 80% Off!</span>
-                  <span>80% Off!</span>
-                  <span>Fashion Gala: Up to 80% Off!</span>
-                  <span>80% Off!</span>
-                  <span>Fashion Gala: Up to 80% Off!</span>
-                </div>
+            {/* Horizontal Moving Marquee Ticker (pink/beige background) */}
+            <div className="bg-[#ebdcd1] border-y border-orange-200/20 py-2.5 overflow-hidden w-full relative flex items-center">
+              <div className="animate-marquee whitespace-nowrap flex gap-8 text-[11px] font-bold text-slate-800 tracking-wider uppercase">
+                <span>80% Off!</span>
+                <span>Fashion Gala: Up to 80% Off!</span>
+                <span>80% Off!</span>
+                <span>Fashion Gala: Up to 80% Off!</span>
+                <span>80% Off!</span>
+                <span>Fashion Gala: Up to 80% Off!</span>
+                <span>80% Off!</span>
+                <span>Fashion Gala: Up to 80% Off!</span>
+                <span>80% Off!</span>
+                <span>Fashion Gala: Up to 80% Off!</span>
               </div>
             </div>
 
