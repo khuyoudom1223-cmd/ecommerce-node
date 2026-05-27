@@ -484,6 +484,10 @@ export default function App() {
         setShowKHQRModal(true);
         triggerNotification('QR generated successfully! Scan with Bakong to pay', 'info');
 
+        // Capture cart item data before interval (closure safety)
+        const cartProductId = cart[0].id;
+        const cartProductQty = cart[0].quantity;
+
         // 3. Start payment status polling every 3-5 seconds (set to 4s)
         const pid = setInterval(() => {
           fetch(`${API_BASE_URL}/api/payments/status/${data.order_id}`)
@@ -496,7 +500,7 @@ export default function App() {
                 
                 // - Reduce product stock locally in frontend mock state
                 setProducts(prevProds => prevProds.map(p => 
-                  p.id === cart[0].id ? { ...p, stock: Math.max(0, p.stock - cart[0].quantity) } : p
+                  p.id === cartProductId ? { ...p, stock: Math.max(0, p.stock - cartProductQty) } : p
                 ));
 
                 triggerNotification('Order Completed Successfully! Payment received.', 'success');
