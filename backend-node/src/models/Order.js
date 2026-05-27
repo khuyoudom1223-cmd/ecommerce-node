@@ -3,9 +3,9 @@ import mongoose from 'mongoose';
 const orderSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    user_id: { type: Number },
+    user_id: { type: String },
     vendor: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
-    vendor_id: { type: Number },
+    vendor_id: { type: String },
     product_id: { type: Number },
     product_name: { type: String },
     size: { type: String },
