@@ -88,6 +88,7 @@ import paymentRouter from './src/routes/payments.js';
 import orderRouter from './src/routes/orders.js';
 import checkoutRouter from './src/routes/checkout.js';
 import bakongRouter from './src/routes/bakong.js';
+import productsRouter from './src/routes/products.js';
 
 app.use('/api/auth', authRouter);
 app.use('/api/users', userRouter);
@@ -96,6 +97,7 @@ app.use('/api/wallet', walletRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/api/orders', orderRouter);
 app.use('/api/checkout', checkoutRouter);
+app.use('/api/products', productsRouter);
 app.use('/api/wallet', bakongRouter);  // Bakong KHQR check-payment
 
 // Simple health check endpoint

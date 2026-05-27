@@ -425,6 +425,21 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentSlideIndex, currentTab, selectedProduct]);
   const [products, setProducts] = useState(INITIAL_PRODUCTS);
+
+  // Sync products with MongoDB database
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/products`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.success && Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+        }
+      })
+      .catch(err => {
+        console.warn('Unable to load products from database, using fallback catalog.', err);
+      });
+  }, [API_BASE_URL]);
+
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [orders, setOrders] = useState([
@@ -925,8 +940,7 @@ export default function App() {
       .map(c => c.trim())
       .filter(Boolean);
 
-    const newProductItem = {
-      id: products.length + 1,
+    const requestBody = {
       name: newProdName,
       sku: newProdSku,
       category: newProdCategory,
@@ -936,14 +950,46 @@ export default function App() {
       description: newProdDescription.trim() || `${newProdName} premium ${newProdCategory.toLowerCase()} collection.`,
       brand: "DOM Studio",
       image: finalImage,
-      rating: 5.0,
       sizes: newProdSizes.length > 0 ? newProdSizes : ["S", "M", "L", "XL"],
-      colors: parsedColors.length > 0 ? parsedColors : ["Blue", "White", "Black"],
-      reviews: []
+      colors: parsedColors.length > 0 ? parsedColors : ["Blue", "White", "Black"]
     };
 
-    setProducts([newProductItem, ...products]);
-    triggerNotification(`Product "${newProdName}" added successfully to catalog!`, "success");
+    const headers = { 'Content-Type': 'application/json' };
+    if (currentUser?.token) {
+      headers['Authorization'] = `Bearer ${currentUser.token}`;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/products`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || 'Server returned error when saving product');
+      }
+
+      const data = await response.json();
+      if (data.success && data.product) {
+        setProducts([data.product, ...products]);
+        triggerNotification(`Product "${newProdName}" added successfully to database!`, "success");
+      } else {
+        throw new Error(data.message || 'Invalid server response structure');
+      }
+    } catch (apiErr) {
+      console.error(apiErr);
+      triggerNotification(`Database save failed: ${apiErr.message}. Creating item in local fallback state.`, "warning");
+      
+      const newProductItem = {
+        id: products.length + 1,
+        ...requestBody,
+        rating: 5.0,
+        reviews: []
+      };
+      setProducts([newProductItem, ...products]);
+    }
     
     // Reset states
     setNewProdName('');
