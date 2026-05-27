@@ -237,6 +237,13 @@ export default function App() {
     { id: "ORD-9876", userId: 1, userName: "Alex Mercer",    productName: "Azurea Classic Trench Coat",   productId: 1, size: "M",  color: "Blue",  quantity: 1, totalAmount: 99.99,  status: "Paid",      date: "2026-05-25T14:30:00Z" },
   ]);
 
+  // DB Mock States: Centralized Transactions
+  const [transactions, setTransactions] = useState([
+    { id: "TXN-5001", orderId: "ORD-9876", amount: 99.99, status: "Success", date: "2026-05-25T14:30:00Z" },
+    { id: "TXN-5002", orderId: "ORD-1012", amount: 99.99, status: "Success", date: "2026-05-09T14:30:00Z" },
+    { id: "TXN-5003", orderId: "ORD-1005", amount: 39.99, status: "Success", date: "2026-03-03T15:00:00Z" }
+  ]);
+
   // Temporary Inputs
   const [selectedSize, setSelectedSize] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
@@ -427,75 +434,72 @@ export default function App() {
       payment_method: 'KHQR'
     };
 
-    fetch(`${API_BASE_URL}/api/checkout`, {
+    triggerNotification('Initiating order and generating KHQR code...', 'info');
+
+    fetch(`${API_BASE_URL}/api/checkout/generate-qr`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     })
-      .then(r => r.json())
-      .then(orderResponse => {
-        if (!orderResponse || !orderResponse.success || !orderResponse.order) {
-          throw new Error(orderResponse?.message || 'Failed to create pending order');
+      .then(r => {
+        if (!r.ok) {
+          return r.json().then(errData => {
+            throw new Error(errData.message || 'Unable to generate QR');
+          });
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (!data || !data.success) {
+          throw new Error(data?.message || 'Unable to generate QR');
         }
 
-        const createdOrder = orderResponse.order;
-        const createdOrderDisplayId = createdOrder.order_number || `ORD-${createdOrder.id}`;
+        const createdOrderDisplayId = `ORD-${data.order_id.toString().slice(-6).toUpperCase()}`;
+
+        // 1. Add pending order to orders list on screen
         setOrders(prev => [{
           id: createdOrderDisplayId,
-          userId: createdOrder.user_id,
+          userId: currentUser.id,
           userName: currentUser.name,
-          vendorId: createdOrder.vendor_id,
-          productId: createdOrder.product_id,
-          productName: createdOrder.product_name,
-          size: createdOrder.size,
-          color: createdOrder.color,
-          quantity: createdOrder.quantity,
-          totalAmount: Number(createdOrder.total_amount),
-          status: createdOrder.status || 'Pending',
+          productId: cart[0].id,
+          productName: cart[0].name,
+          size: cart[0].size,
+          color: cart[0].color,
+          quantity: cart[0].quantity,
+          totalAmount: data.amount,
+          status: 'Pending',
           date: new Date().toISOString(),
-          customerName: createdOrder.customer_name,
-          phoneNumber: createdOrder.phone_number,
-          deliveryAddress: createdOrder.delivery_address,
-          note: createdOrder.note || ''
+          customerName: fullName || currentUser.name,
+          phoneNumber: phone,
+          deliveryAddress: location,
+          note: note || ''
         }, ...prev]);
 
-        return fetch(`${API_BASE_URL}/api/payments/khqr`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            order_id: createdOrder.id,
-            amount: createdOrder.total_amount,
-            customer_name: createdOrder.customer_name,
-            phone_number: createdOrder.phone_number,
-            delivery_address: createdOrder.delivery_address,
-            product_id: createdOrder.product_id,
-            user_id: createdOrder.user_id,
-            product_name: createdOrder.product_name,
-            size: createdOrder.size,
-            color: createdOrder.color,
-            quantity: createdOrder.quantity,
-            note: createdOrder.note
-          })
+        // 2. Set KHQR States
+        setKhqrPayload({
+          qr_string: data.qr_string,
+          qr_image_url: data.qr_image
         });
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (!data || data.error) {
-          throw new Error(data?.message || 'Failed to generate KHQR');
-        }
-
-        setKhqrPayload(data.khqr);
-        setKhqrOrderId(data.order_id);
+        setKhqrOrderId(createdOrderDisplayId);
         setShowKHQRModal(true);
-        triggerNotification('Scan the displayed KHQR with Bakong to pay', 'info');
+        triggerNotification('QR generated successfully! Scan with Bakong to pay', 'info');
 
+        // 3. Start payment status polling every 3-5 seconds (set to 4s)
         const pid = setInterval(() => {
           fetch(`${API_BASE_URL}/api/payments/status/${data.order_id}`)
             .then(r => r.json())
             .then(statusData => {
               if (statusData && statusData.paid) {
+                // If payment status = Paid:
+                // - Update order status to Paid
                 setOrders(prev => prev.map(o => o.id === createdOrderDisplayId ? { ...o, status: 'Paid' } : o));
-                triggerNotification('Payment received — order marked as Paid', 'success');
+                
+                // - Reduce product stock locally in frontend mock state
+                setProducts(prevProds => prevProds.map(p => 
+                  p.id === cart[0].id ? { ...p, stock: Math.max(0, p.stock - cart[0].quantity) } : p
+                ));
+
+                triggerNotification('Order Completed Successfully! Payment received.', 'success');
                 clearInterval(pid);
                 setPaymentPollingId(null);
                 setShowKHQRModal(false);
@@ -510,12 +514,12 @@ export default function App() {
             .catch(err => {
               console.error('Status poll error', err);
             });
-        }, 5000);
+        }, 4000);
         setPaymentPollingId(pid);
       })
       .catch(err => {
         console.error(err);
-        triggerNotification(err.message || 'Payment request failed', 'error');
+        triggerNotification(err.message || 'Unable to generate QR', 'error');
       });
   };
 
