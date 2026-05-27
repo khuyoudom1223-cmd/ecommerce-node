@@ -2,237 +2,278 @@ import express from 'express';
 import asyncHandler from 'express-async-handler';
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import Transaction from '../models/Transaction.js';
 import Wallet from '../models/Wallet.js';
+import User from '../models/User.js';
 import { PRODUCT_DB, paymentSessions } from './checkout.js';
+import { verifyBakongPayment, normalizeBakongResponse } from '../services/bakongPayment.js';
+import { verifyToken } from '../utils/jwt.js';
 
 const router = express.Router();
 
-// ─── Bakong API Configuration ──────────────────────────────────
-function getBakongConfig() {
-  const isProduction = process.env.NODE_ENV === 'production';
-  return {
-    baseUrl: isProduction
-      ? (process.env.BAKONG_PROD_BASE_API_URL || 'https://api-bakong.nbc.gov.kh/v1')
-      : (process.env.BAKONG_DEV_BASE_API_URL || 'https://sit-api-bakong.nbc.gov.kh/v1'),
-    token: process.env.BAKONG_TOKEN
-  };
+async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = verifyToken(token);
+      req.user = await User.findById(decoded.id).select('-password');
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Not authorized, token invalid' });
+    }
+  }
+
+  next();
 }
 
-// ─── Helper: Call Bakong Verification API ───────────────────────
-async function verifyWithBakong(md5Hash) {
-  const { baseUrl, token } = getBakongConfig();
-  if (!token) {
-    console.warn('⚠️ BAKONG_TOKEN not configured — skipping live verification');
+function getOrderAmount(order) {
+  return Number(order.totalAmount ?? order.total_amount ?? 0);
+}
+
+async function resolveProduct(order) {
+  const legacyId = Number(order.product_id);
+  if (Number.isFinite(legacyId)) {
+    const productDoc = await Product.findOne({ legacyId });
+    if (productDoc) {
+      return { source: 'db', doc: productDoc };
+    }
+  }
+
+  if (PRODUCT_DB[order.product_id]) {
+    return { source: 'memory', doc: null };
+  }
+
+  return null;
+}
+
+async function decrementProductStock(order, quantity, session) {
+  const productSnapshot = await resolveProduct(order);
+  if (!productSnapshot) {
+    return;
+  }
+
+  if (productSnapshot.source === 'db' && productSnapshot.doc) {
+    if (productSnapshot.doc.stock < quantity) {
+      throw new Error('Insufficient product stock');
+    }
+    productSnapshot.doc.stock -= quantity;
+    await productSnapshot.doc.save({ session });
+    return;
+  }
+
+  if (productSnapshot.source === 'memory' && PRODUCT_DB[order.product_id]) {
+    PRODUCT_DB[order.product_id].stock = Math.max(0, PRODUCT_DB[order.product_id].stock - quantity);
+  }
+}
+
+async function creditVendorWallet(order, amount, session) {
+  if (!order.vendor) {
+    return;
+  }
+
+  await Wallet.findOneAndUpdate(
+    { owner: order.vendor, ownerModel: 'Vendor' },
+    { $inc: { balance: amount } },
+    { new: true, upsert: true, session }
+  );
+}
+
+async function finalizePayment(order, normalized, session) {
+  const amount = getOrderAmount(order);
+  const updatedOrder = await Order.findOneAndUpdate(
+    {
+      _id: order._id,
+      status: 'Pending',
+      payment_status: { $ne: 'Completed' },
+      paymentId: order.paymentId
+    },
+    {
+      $set: {
+        status: 'Paid',
+        payment_status: 'Completed',
+        bakongTransactionId: normalized.bakongTransactionId,
+        bakongResponse: normalized.raw,
+        paidAt: new Date(),
+        qrExpired: false,
+        lastPaymentCheckAt: new Date()
+      },
+      $inc: { paymentCheckCount: 1 }
+    },
+    { new: true, session }
+  );
+
+  if (!updatedOrder) {
     return null;
   }
 
-  try {
-    console.log(`📡 [BAKONG POLL] Calling /check_transaction_by_md5 for MD5: ${md5Hash}...`);
-    const response = await fetch(`${baseUrl}/check_transaction_by_md5`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ md5: md5Hash })
+  await creditVendorWallet(updatedOrder, amount, session);
+  await decrementProductStock(updatedOrder, Number(updatedOrder.quantity || 1), session);
+
+  await Transaction.findOneAndUpdate(
+    {
+      reference: updatedOrder._id.toString(),
+      type: 'Payment'
+    },
+    {
+      $set: {
+        status: 'Completed',
+        amount,
+        orderId: updatedOrder._id,
+        paymentReference: updatedOrder.paymentReference,
+        bakongTransactionId: normalized.bakongTransactionId,
+        bakongResponse: normalized.raw,
+        processedAt: new Date(),
+        gateway: 'Bakong'
+      }
+    },
+    { new: true, session }
+  );
+
+  return updatedOrder;
+}
+
+async function handleStatusCheck(req, res, { requireAuth = false } = {}) {
+  const { orderId } = req.params;
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    return res.status(404).json({ success: false, paid: false, message: 'Order not found' });
+  }
+
+  if (requireAuth && !req.user) {
+    return res.status(401).json({ success: false, paid: false, message: 'Not authorized' });
+  }
+
+  if (req.user) {
+    const ownsOrder = (order.user && order.user.toString() === req.user._id.toString()) || order.user_id === req.user._id;
+    const isAdmin = req.user.role === 'Admin';
+    const isVendor = order.vendor && order.vendor.toString() === req.user._id.toString();
+
+    if (!isAdmin && !ownsOrder && !isVendor) {
+      return res.status(403).json({ success: false, paid: false, message: 'Forbidden' });
+    }
+  } else {
+    const providedReference = req.headers['x-payment-reference'] || req.query.paymentReference;
+    if (!providedReference || providedReference !== order.paymentReference) {
+      return res.status(401).json({ success: false, paid: false, message: 'Not authorized' });
+    }
+  }
+
+  if (order.status === 'Paid' || order.payment_status === 'Completed') {
+    return res.json({ success: true, paid: true, status: 'Paid', message: 'Order Success' });
+  }
+
+  const now = Date.now();
+  if (order.paymentExpiresAt && now > new Date(order.paymentExpiresAt).getTime() && order.payment_status !== 'Completed') {
+    await Order.findByIdAndUpdate(order._id, {
+      payment_status: 'Timeout',
+      qrExpired: true,
+      lastPaymentCheckAt: new Date(),
+      $inc: { paymentCheckCount: 1 }
     });
 
-    if (response.ok) {
-      const result = await response.json();
-      console.log(`📡 [BAKONG RESPONSE]:`, JSON.stringify(result));
-      return result;
-    }
-    return null;
-  } catch (err) {
-    console.error('⚠️ [Bakong API Error]', err.message);
-    return null;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// @desc    Poll status of KHQR payment for checkout orders
-//          Flow: Check Bakong → Update Order → Credit Vendor Wallet
-//                → Reduce Stock → Create Transaction History
-// @route   GET /api/payments/status/:orderId
-// @access  Public
-// ─────────────────────────────────────────────────────────────────
-router.get('/status/:orderId', asyncHandler(async (req, res) => {
-  const { orderId } = req.params;
-
-  // ── 1. Find the order ─────────────────────────────────────────
-  const order = await Order.findById(orderId);
-  if (!order) {
-    return res.status(404).json({ paid: false, message: 'Order not found' });
+    return res.json({ success: false, paid: false, status: 'Timeout', message: 'Payment Timeout' });
   }
 
-  // ── 2. CRITICAL: If already Paid/Completed → return immediately ──
-  //       NEVER allow status to go backwards (Paid → Pending)
-  if (order.status === 'Paid' || order.status === 'Completed') {
-    return res.json({ paid: true, status: order.status });
+  if (order.payment_status === 'Failed') {
+    return res.json({ success: false, paid: false, status: 'Failed', message: 'Payment Failed' });
   }
 
-  // ── 3. If Failed → return failed status ───────────────────────
-  if (order.status === 'Failed') {
-    return res.json({ paid: false, status: 'Failed', message: 'Payment failed' });
-  }
-
-  // ── 4. Status is Pending → verify with Bakong API ────────────
   const md5Hash = order.paymentId;
-  let isPaid = false;
-  let bakongResult = null;
-
-  if (md5Hash) {
-    bakongResult = await verifyWithBakong(md5Hash);
-
-    // Bakong confirms payment: responseCode === 0 + toAccountId present
-    isPaid = bakongResult
-      && bakongResult.responseCode === 0
-      && bakongResult.data
-      && !!bakongResult.data.toAccountId;
+  if (!md5Hash) {
+    await Order.findByIdAndUpdate(order._id, {
+      lastPaymentCheckAt: new Date(),
+      $inc: { paymentCheckCount: 1 }
+    });
+    return res.json({ success: false, paid: false, status: 'Pending', message: 'Waiting for payment' });
   }
 
-  // ── 5. Fallback Simulation for Local Dev / UAT Testing ────────
-  //       Auto-complete after 8 seconds for seamless local demoing
-  if (!isPaid) {
-    const session = paymentSessions.get(orderId.toString());
-    if (session) {
-      const elapsedSeconds = (Date.now() - session.startTime) / 1000;
-      if (elapsedSeconds >= 8) {
-        console.log(`🎉 [SIMULATED CHECKOUT SUCCESS] Order ${orderId} reached 8s limit. Simulating payment...`);
-        isPaid = true;
-        bakongResult = {
-          responseCode: 0,
-          data: {
-            status: 'SUCCESS',
-            hash: 'sim_' + Math.random().toString(36).substring(7).toUpperCase(),
-            amount: order.totalAmount || order.total_amount,
-            toAccountId: process.env.BAKONG_MERCHANT_ID || 'soklin_chen@bkrt'
-          }
-        };
-      }
-    }
+  const bakongResult = await verifyBakongPayment(md5Hash);
+  if (!bakongResult) {
+    await Order.findByIdAndUpdate(order._id, {
+      lastPaymentCheckAt: new Date(),
+      $inc: { paymentCheckCount: 1 }
+    });
+    return res.json({ success: false, paid: false, status: 'Pending', message: 'Waiting for payment' });
   }
 
-  // ── 6. If still not paid → return Pending ─────────────────────
-  if (!isPaid) {
-    return res.json({ paid: false, status: 'Pending', message: 'Waiting for payment' });
+  const normalized = normalizeBakongResponse(bakongResult, order.paymentReference);
+
+  if (!normalized.referenceMatches) {
+    console.warn(`⚠️ [BAKONG REFERENCE MISMATCH] Order ${orderId} expected ${order.paymentReference} but received ${normalized.resolvedReference}`);
+    await Order.findByIdAndUpdate(order._id, {
+      payment_status: 'Failed',
+      bakongResponse: bakongResult,
+      lastPaymentCheckAt: new Date(),
+      $inc: { paymentCheckCount: 1 }
+    });
+    return res.status(400).json({ success: false, paid: false, status: 'Failed', message: 'Invalid payment reference' });
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // ── 7. PAYMENT CONFIRMED! Execute atomic fulfillment logic ────
-  //       All operations inside try/catch with session + fallback
-  // ══════════════════════════════════════════════════════════════
-  let lockedOrder = null;
+  if (normalized.isFailed) {
+    await Order.findByIdAndUpdate(order._id, {
+      payment_status: 'Failed',
+      bakongResponse: bakongResult,
+      lastPaymentCheckAt: new Date(),
+      $inc: { paymentCheckCount: 1 }
+    });
+    return res.json({ success: false, paid: false, status: 'Failed', message: 'Payment Failed' });
+  }
+
+  if (!normalized.isSuccess) {
+    await Order.findByIdAndUpdate(order._id, {
+      lastPaymentCheckAt: new Date(),
+      payment_status: 'Pending',
+      bakongResponse: bakongResult,
+      $inc: { paymentCheckCount: 1 }
+    });
+    return res.json({ success: false, paid: false, status: 'Pending', message: 'Waiting for payment' });
+  }
+
   let mongoSession = null;
 
   try {
     mongoSession = await mongoose.startSession();
     mongoSession.startTransaction();
 
-    // 7a. Atomically update Order: Pending → Paid (ONLY if still Pending)
-    lockedOrder = await Order.findOneAndUpdate(
-      { _id: orderId, status: 'Pending' },
-      {
-        status: 'Paid',
-        paymentId: md5Hash
-      },
-      { new: true, session: mongoSession }
-    );
+    const fulfilledOrder = await finalizePayment(order, normalized, mongoSession);
 
-    if (lockedOrder) {
-      // 7b. Credit Vendor Wallet (if order has a vendor)
-      if (lockedOrder.vendor) {
-        await Wallet.findOneAndUpdate(
-          { owner: lockedOrder.vendor, ownerModel: 'Vendor' },
-          { $inc: { balance: lockedOrder.totalAmount || lockedOrder.total_amount } },
-          { new: true, upsert: true, session: mongoSession }
-        );
-        console.log(`💰 [VENDOR WALLET CREDITED] Vendor ${lockedOrder.vendor} received $${lockedOrder.totalAmount || lockedOrder.total_amount}`);
+    if (!fulfilledOrder) {
+      await mongoSession.abortTransaction();
+      mongoSession.endSession();
+
+      const alreadyProcessed = await Order.findById(order._id);
+      if (alreadyProcessed && (alreadyProcessed.status === 'Paid' || alreadyProcessed.payment_status === 'Completed')) {
+        paymentSessions.delete(order._id.toString());
+        return res.json({ success: true, paid: true, status: 'Paid', message: 'Order Success' });
       }
 
-      // 7c. Reduce Product Stock
-      const sessionData = paymentSessions.get(orderId.toString());
-      const productId = sessionData ? sessionData.productId : lockedOrder.product_id;
-      const quantity = sessionData ? sessionData.quantity : lockedOrder.quantity;
-      if (PRODUCT_DB[productId]) {
-        const oldStock = PRODUCT_DB[productId].stock;
-        PRODUCT_DB[productId].stock = Math.max(0, PRODUCT_DB[productId].stock - quantity);
-        console.log(`📉 [STOCK REDUCED] Product ${productId}: ${oldStock} → ${PRODUCT_DB[productId].stock}`);
-      }
-
-      // 7d. Update Transaction History: Pending → Completed
-      const txn = await Transaction.findOne({ reference: orderId.toString() }).session(mongoSession);
-      if (txn) {
-        txn.status = 'Completed';
-        await txn.save({ session: mongoSession });
-      }
+      return res.status(409).json({ success: false, paid: false, status: 'Pending', message: 'Payment already processed' });
     }
 
     await mongoSession.commitTransaction();
   } catch (sessionErr) {
-    // Abort session if it was started
     if (mongoSession) {
-      try { await mongoSession.abortTransaction(); } catch (_) {}
+      try {
+        await mongoSession.abortTransaction();
+      } catch (_) {}
     }
-    console.warn('⚠️ [Session Not Supported/Failed] Using atomic fallback:', sessionErr.message);
 
-    // ── Fallback: Atomic single-document updates (standalone MongoDB) ──
-    lockedOrder = await Order.findOneAndUpdate(
-      { _id: orderId, status: 'Pending' },
-      {
-        status: 'Paid',
-        paymentId: md5Hash
-      },
-      { new: true }
-    );
-
-    if (lockedOrder) {
-      // Credit Vendor Wallet (fallback, no session)
-      if (lockedOrder.vendor) {
-        await Wallet.findOneAndUpdate(
-          { owner: lockedOrder.vendor, ownerModel: 'Vendor' },
-          { $inc: { balance: lockedOrder.totalAmount || lockedOrder.total_amount } },
-          { new: true, upsert: true }
-        );
-        console.log(`💰 [VENDOR WALLET CREDITED - FALLBACK] Vendor ${lockedOrder.vendor} received $${lockedOrder.totalAmount || lockedOrder.total_amount}`);
-      }
-
-      // Reduce Product Stock (fallback)
-      const sessionData = paymentSessions.get(orderId.toString());
-      const productId = sessionData ? sessionData.productId : lockedOrder.product_id;
-      const quantity = sessionData ? sessionData.quantity : lockedOrder.quantity;
-      if (PRODUCT_DB[productId]) {
-        const oldStock = PRODUCT_DB[productId].stock;
-        PRODUCT_DB[productId].stock = Math.max(0, PRODUCT_DB[productId].stock - quantity);
-        console.log(`📉 [STOCK REDUCED - FALLBACK] Product ${productId}: ${oldStock} → ${PRODUCT_DB[productId].stock}`);
-      }
-
-      // Update Transaction History (fallback)
-      await Transaction.findOneAndUpdate(
-        { reference: orderId.toString(), status: 'Pending' },
-        { status: 'Completed' },
-        { new: true }
-      );
-    }
+    console.error('⚠️ [PAYMENT FULFILLMENT ERROR]', sessionErr.message);
+    return res.status(500).json({ success: false, paid: false, message: 'Payment processing failed' });
   } finally {
     if (mongoSession) {
       mongoSession.endSession();
     }
   }
 
-  // ── 8. Clean up payment session ───────────────────────────────
-  paymentSessions.delete(orderId.toString());
+  paymentSessions.delete(order._id.toString());
+  return res.json({ success: true, paid: true, status: 'Paid', message: 'Order Success' });
+}
 
-  // ── 9. If lockedOrder is null → another request already processed it ──
-  //       (Race condition guard: still return paid=true)
-  if (!lockedOrder) {
-    console.log(`⚡ [ALREADY PROCESSED] Order ${orderId} was already fulfilled by another request`);
-    return res.json({ paid: true, status: 'Paid' });
-  }
+router.get('/status/:orderId', optionalAuth, asyncHandler(async (req, res) => handleStatusCheck(req, res)));
 
-  console.log(`🎉 [ORDER PAID] Order ${orderId} → Status: Paid. Stock reduced. Transaction recorded.`);
-  return res.json({ paid: true, status: 'Paid' });
-}));
+router.get('/secure/status/:orderId', optionalAuth, asyncHandler(async (req, res) => handleStatusCheck(req, res, { requireAuth: true })));
 
 export default router;

@@ -1,35 +1,68 @@
 import express from 'express';
 import asyncHandler from 'express-async-handler';
 import crypto from 'crypto';
-import pkg from 'bakong-khqr';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import Transaction from '../models/Transaction.js';
-import { success, error } from '../utils/response.js';
-
-const { BakongKHQR, khqrData, IndividualInfo } = pkg;
+import { protect } from '../middleware/auth.js';
+import { error } from '../utils/response.js';
+import { buildBakongKhqr, createBakongPaymentReference } from '../services/bakongPayment.js';
 
 const router = express.Router();
 
-// Simulated MongoDB-backed Product Database in memory (persisted during server runtime)
 export const PRODUCT_DB = {
-  1: { name: "Azurea Classic Trench Coat", price: 99.99, stock: 15 },
-  2: { name: "Royal Velvet Evening Gown", price: 149.99, stock: 8 },
-  3: { name: "Minimalist Linen Summer Shirt", price: 49.99, stock: 25 },
-  4: { name: "Slim-Fit Indigo Denim Jacket", price: 79.99, stock: 12 },
-  5: { name: "Chiffon Pleated Midi Skirt", price: 39.99, stock: 20 },
-  6: { name: "Cable-Knit Cashmere Sweater", price: 119.99, stock: 5 }
+  1: { name: 'Azurea Classic Trench Coat', price: 99.99, stock: 15 },
+  2: { name: 'Royal Velvet Evening Gown', price: 149.99, stock: 8 },
+  3: { name: 'Minimalist Linen Summer Shirt', price: 49.99, stock: 25 },
+  4: { name: 'Slim-Fit Indigo Denim Jacket', price: 79.99, stock: 12 },
+  5: { name: 'Chiffon Pleated Midi Skirt', price: 39.99, stock: 20 },
+  6: { name: 'Cable-Knit Cashmere Sweater', price: 119.99, stock: 5 }
 };
 
-// Store payment sessions for simulation polling fallback
 export const paymentSessions = new Map();
 
-// @desc    Validate order, create Pending record, generate real Bakong EMVCo KHQR code
-// @route   POST /api/checkout/generate-qr
-// @access  Public
-router.post('/generate-qr', asyncHandler(async (req, res) => {
+async function resolveProduct(productId) {
+  const legacyId = Number(productId);
+  if (Number.isFinite(legacyId)) {
+    const productDoc = await Product.findOne({ legacyId });
+    if (productDoc) {
+      return {
+        id: productDoc.legacyId,
+        name: productDoc.name,
+        price: productDoc.price,
+        stock: productDoc.stock,
+        vendor: productDoc.vendor || null,
+        source: 'db',
+        doc: productDoc
+      };
+    }
+  }
+
+  const fallback = PRODUCT_DB[productId];
+  if (fallback) {
+    return {
+      id: Number(productId),
+      name: fallback.name,
+      price: fallback.price,
+      stock: fallback.stock,
+      vendor: null,
+      source: 'memory',
+      doc: null
+    };
+  }
+
+  return null;
+}
+
+async function generateOrderQr(req, res, { requireAuth = false } = {}) {
+  if (requireAuth && !req.user) {
+    return res.status(401).json({ success: false, message: 'Not authorized' });
+  }
+
   const {
     user_id,
     product_id,
+    vendor_id,
     size,
     color,
     quantity,
@@ -40,126 +73,109 @@ router.post('/generate-qr', asyncHandler(async (req, res) => {
     payment_method
   } = req.body;
 
-  // 1. Validation Checks
   if (!product_id || !quantity || !customer_name || !phone_number || !delivery_address) {
-    return res.status(400).json({
-      success: false,
-      message: "Missing required checkout fields"
-    });
+    return error(res, 400, 'Missing required checkout fields');
   }
 
-  const prod = PRODUCT_DB[product_id];
-  if (!prod) {
-    return res.status(404).json({
-      success: false,
-      message: "Product not found"
-    });
+  const productSnapshot = await resolveProduct(product_id);
+  if (!productSnapshot) {
+    return error(res, 404, 'Product not found');
   }
 
-  // Stock check
-  if (prod.stock < quantity) {
-    return res.status(400).json({
-      success: false,
-      message: `Out of stock. Only ${prod.stock} items left.`
-    });
+  if (productSnapshot.stock < quantity) {
+    return error(res, 400, `Out of stock. Only ${productSnapshot.stock} items left.`);
   }
 
-  const totalAmount = prod.price * quantity;
-
-  // 2. Load merchant info
-  const merchantId = process.env.BAKONG_MERCHANT_ID || 'soklin_chen@bkrt';
-  const merchantName = process.env.BAKONG_MERCHANT_NAME || 'SOKLIN CHEN';
+  const totalAmount = Number(productSnapshot.price) * Number(quantity);
+  const paymentReference = createBakongPaymentReference('ORD');
 
   let qrString = '';
   let md5Hash = '';
+  let paymentExpiresAt = null;
 
   try {
-    const expirationTimestamp = Date.now() + 5 * 60 * 1000;
-    
-    // 3. Generate OFFICIAL Bakong EMVCo-compliant individual KHQR using optionalData structure
-    const optionalData = {
-      currency: khqrData.currency.usd,
-      amount: parseFloat(totalAmount),
-      billNumber: `ORD-${Date.now().toString().slice(-6)}`,
-      storeLabel: "SleekCart",
-      terminalLabel: "Online Checkout",
-      expirationTimestamp
-    };
-
-    const individualInfo = new IndividualInfo(
-      merchantId,
-      merchantName,
-      "Phnom Penh",
-      optionalData
-    );
-
-    const khqr = new BakongKHQR();
-    const khqrResponse = khqr.generateIndividual(individualInfo);
-
-    if (khqrResponse && khqrResponse.status && khqrResponse.status.code === 0 && khqrResponse.data) {
-      qrString = khqrResponse.data.qr;
-      md5Hash = khqrResponse.data.md5;
-    } else {
-      throw new Error("Bakong SDK failed to generate valid individual KHQR");
-    }
+    const khqr = buildBakongKhqr({
+      amount: totalAmount,
+      paymentReference,
+      expirationMinutes: 5
+    });
+    qrString = khqr.qrString;
+    md5Hash = khqr.md5Hash;
+    paymentExpiresAt = new Date(khqr.expirationTimestamp);
   } catch (sdkErr) {
-    console.error("⚠️ [Bakong SDK Error] Falling back to robust generator:", sdkErr.message);
-    
-    // Fail-safe robust fallback generator matching the exact EMVCo standard
-    qrString = `000201010212373000160123456789ABCDEF0208${merchantId.split('@')[0]}5204599953038405802KH5912${encodeURIComponent(merchantName)}6010Phnom Penh6304` + Math.random().toString(36).substring(7).toUpperCase();
+    console.error('⚠️ [Bakong SDK Error] Falling back to robust generator:', sdkErr.message);
+    const fallbackMerchantId = process.env.BAKONG_MERCHANT_ID || 'soklin_chen@bkrt';
+    const fallbackMerchantName = process.env.BAKONG_MERCHANT_NAME || 'SOKLIN CHEN';
+    qrString = `000201010212373000160123456789ABCDEF0208${fallbackMerchantId.split('@')[0]}5204599953038405802KH5912${encodeURIComponent(fallbackMerchantName)}6010Phnom Penh6304` + crypto.randomBytes(2).toString('hex').toUpperCase();
     md5Hash = crypto.createHash('md5').update(qrString).digest('hex');
+    paymentExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
   }
 
-  // 4. Create Pending Order record in MongoDB with the MD5 hash stored in paymentId
   const order = await Order.create({
-    user_id: user_id || 1,
+    user: req.user?._id || undefined,
+    user_id: req.user ? undefined : user_id || null,
+    vendor: vendor_id || productSnapshot.vendor || undefined,
+    vendor_id: vendor_id || null,
     product_id,
-    product_name: prod.name,
+    product_name: productSnapshot.name,
     size,
     color,
     quantity,
     total_amount: totalAmount,
-    totalAmount: totalAmount,
+    totalAmount,
     status: 'Pending',
-    payment_method: payment_method || 'KHQR',
     paymentMethod: payment_method || 'KHQR',
+    payment_method: payment_method || 'KHQR',
     customer_name,
     phone_number,
     delivery_address,
     note: note || '',
-    paymentId: md5Hash // Store MD5 hash for transaction checking
+    paymentId: md5Hash,
+    paymentReference,
+    payment_status: 'Pending',
+    paymentProvider: 'Bakong',
+    paymentExpiresAt,
+    qrExpired: false
   });
 
-  // 5. Create Pending Transaction record in MongoDB
-  const transaction = await Transaction.create({
+  await Transaction.create({
+    orderId: order._id,
     amount: totalAmount,
     type: 'Payment',
     reference: order._id.toString(),
+    gateway: 'Bakong',
+    paymentReference,
     status: 'Pending'
+  });
+
+  paymentSessions.set(order._id.toString(), {
+    startTime: Date.now(),
+    productId: Number(product_id),
+    quantity: Number(quantity),
+    md5: md5Hash,
+    paymentReference,
+    expiresAt: paymentExpiresAt ? paymentExpiresAt.getTime() : Date.now() + 5 * 60 * 1000
   });
 
   const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrString)}`;
 
-  // Store payment initiation details for status polling simulation fallback
-  paymentSessions.set(order._id.toString(), {
-    startTime: Date.now(),
-    productId: product_id,
-    quantity: quantity,
-    transactionId: transaction._id,
-    md5: md5Hash
-  });
+  console.log(`🎉 [OFFICIAL KHQR GENERATED] Order ${order._id}. Reference: ${paymentReference}. MD5: ${md5Hash}`);
 
-  console.log(`🎉 [OFFICIAL KHQR GENERATED] Order ${order._id}. Merchant: ${merchantName} (${merchantId}). MD5: ${md5Hash}`);
-
-  // 6. Return success response per specifications
   return res.status(200).json({
     success: true,
-    message: "QR generated successfully",
+    message: 'QR generated successfully',
     qr_string: qrString,
     qr_image: qrImage,
     amount: totalAmount,
-    order_id: order._id
+    order_id: order._id,
+    payment_reference: paymentReference,
+    payment_expires_at: paymentExpiresAt,
+    polling_interval_seconds: 4
   });
-}));
+}
+
+router.post('/generate-qr', asyncHandler(async (req, res) => generateOrderQr(req, res)));
+
+router.post('/secure/generate-qr', protect, asyncHandler(async (req, res) => generateOrderQr(req, res, { requireAuth: true })));
 
 export default router;

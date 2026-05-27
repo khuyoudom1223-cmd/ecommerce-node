@@ -24,7 +24,25 @@ const orderSchema = new mongoose.Schema(
     phone_number: { type: String },
     delivery_address: { type: String },
     note: { type: String },
-    paymentId: { type: String }
+    paymentId: { type: String },
+    paymentReference: { type: String, index: true },
+    payment_status: {
+      type: String,
+      enum: ['Pending', 'Completed', 'Failed', 'Timeout'],
+      default: 'Pending',
+      index: true
+    },
+    paymentProvider: {
+      type: String,
+      default: 'Bakong'
+    },
+    bakongTransactionId: { type: String, index: true },
+    bakongResponse: { type: mongoose.Schema.Types.Mixed },
+    paymentExpiresAt: { type: Date, index: true },
+    qrExpired: { type: Boolean, default: false },
+    lastPaymentCheckAt: { type: Date },
+    paymentCheckCount: { type: Number, default: 0 },
+    paidAt: { type: Date }
   },
   { timestamps: true }
 );
