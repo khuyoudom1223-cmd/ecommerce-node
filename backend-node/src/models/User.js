@@ -5,7 +5,14 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true },
-    password: { type: String, required: true, select: false },
+    password: { 
+      type: String, 
+      required: function() { return this.provider === 'local'; }, 
+      select: false 
+    },
+    provider: { type: String, required: true, enum: ['local', 'google', 'facebook'], default: 'local' },
+    providerId: { type: String, required: function() { return this.provider !== 'local'; } },
+    avatar: { type: String, default: '' },
     role: {
       type: String,
       enum: ['Admin', 'User', 'Vendor'],

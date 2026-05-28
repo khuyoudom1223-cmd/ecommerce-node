@@ -8,6 +8,7 @@ import fs from 'fs';
 import multer from 'multer';
 import connectDB from './src/config/database.js';
 import errorHandler from './src/middleware/errorHandler.js';
+import passport from './src/config/passport.js';
 
 // Load env variables
 dotenv.config();
@@ -25,6 +26,7 @@ if (!fs.existsSync('./uploads')) {
 // Global middlewares
 app.use(cors());
 app.use(express.json());
+app.use(passport.initialize());
 
 // Serve uploads statically
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
