@@ -104,13 +104,14 @@ const SEED_PRODUCTS = [
   }
 ];
 
-// Helper to seed database if empty
+// Helper to seed database if empty or missing seeded items
 async function seedIfEmpty() {
-  const count = await Product.countDocuments();
-  if (count === 0) {
-    console.log('🌱 Seeding products collection to MongoDB...');
-    await Product.insertMany(SEED_PRODUCTS);
-    console.log('✅ Products seeded successfully.');
+  for (const seed of SEED_PRODUCTS) {
+    const exists = await Product.findOne({ legacyId: seed.legacyId });
+    if (!exists) {
+      console.log(`🌱 Seeding missing product: ${seed.name}`);
+      await Product.create(seed);
+    }
   }
 }
 
@@ -206,6 +207,24 @@ router.post('/', protect, asyncHandler(async (req, res) => {
       _id: savedProduct._id
     }
   });
+}));
+
+// DELETE a product from database
+router.delete('/:id', protect, asyncHandler(async (req, res) => {
+  const idParam = req.params.id;
+  let deleted;
+
+  if (Number.isInteger(Number(idParam))) {
+    deleted = await Product.findOneAndDelete({ legacyId: Number(idParam) });
+  } else {
+    deleted = await Product.findByIdAndDelete(idParam);
+  }
+  
+  if (!deleted) {
+    return res.status(404).json({ success: false, message: 'Product not found in database' });
+  }
+
+  res.json({ success: true, message: 'Product deleted from database successfully' });
 }));
 
 export default router;

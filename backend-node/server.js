@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import 'express-async-errors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,9 +9,6 @@ import multer from 'multer';
 import connectDB from './src/config/database.js';
 import errorHandler from './src/middleware/errorHandler.js';
 import passport from './src/config/passport.js';
-
-// Load env variables
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

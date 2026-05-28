@@ -1,13 +1,31 @@
+import 'dotenv/config';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import User from '../models/User.js';
 
+const requireEnv = (name) => {
+  const value = process.env[name]?.trim();
+  const placeholderPattern = /^your-|^mock_/i;
+  if (!value || placeholderPattern.test(value)) {
+    throw new Error(`${name} is required for OAuth login. Set it in backend-node/.env before starting the server.`);
+  }
+  return value;
+};
+
+const googleClientID = requireEnv('GOOGLE_CLIENT_ID');
+const googleClientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
+const googleCallbackURL = requireEnv('GOOGLE_CALLBACK_URL');
+
+const facebookAppID = requireEnv('FACEBOOK_APP_ID');
+const facebookAppSecret = requireEnv('FACEBOOK_APP_SECRET');
+const facebookCallbackURL = requireEnv('FACEBOOK_CALLBACK_URL');
+
 // --- GOOGLE STRATEGY ---
 passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID || 'mock_google_id',
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'mock_google_secret',
-  callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000/api/auth/google/callback',
+  clientID: googleClientID,
+  clientSecret: googleClientSecret,
+  callbackURL: googleCallbackURL,
   profileFields: ['id', 'emails', 'name', 'photos']
 },
 async (accessToken, refreshToken, profile, done) => {
@@ -48,9 +66,9 @@ async (accessToken, refreshToken, profile, done) => {
 
 // --- FACEBOOK STRATEGY ---
 passport.use(new FacebookStrategy({
-  clientID: process.env.FACEBOOK_APP_ID || 'mock_facebook_id',
-  clientSecret: process.env.FACEBOOK_APP_SECRET || 'mock_facebook_secret',
-  callbackURL: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:4000/api/auth/facebook/callback',
+  clientID: facebookAppID,
+  clientSecret: facebookAppSecret,
+  callbackURL: facebookCallbackURL,
   profileFields: ['id', 'emails', 'name', 'picture.type(large)']
 },
 async (accessToken, refreshToken, profile, done) => {
